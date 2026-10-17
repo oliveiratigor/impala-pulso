@@ -5,7 +5,7 @@ Simulador de relógio no pulso, em tamanho real, para a página de produto da Re
 Instalação (Visual › Incluir código HTML › rodapé › Página de produto › HTML):
 
 ```html
-<script src="https://cdn.jsdelivr.net/gh/oliveiratigor/impala-pulso@1/impala-pulso.min.js" data-estilo="minimal" data-teste charset="utf-8" defer></script>
+<script src="https://cdn.jsdelivr.net/gh/oliveiratigor/impala-pulso@main/impala-pulso.min.js" data-estilo="minimal" data-teste charset="utf-8" defer></script>
 ```
 
 - `data-estilo`: `minimal` ou `completo`
