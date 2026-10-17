@@ -1,4 +1,4 @@
-/*! Impala · No seu pulso — v1.0
+/*! Impala · No seu pulso — v1.0.1
  * Simulador "relógio no pulso" para a página de produto da Loja Integrada.
  * Lê a primeira imagem do cadastro e as medidas da descrição (Diâmetro, Lug to Lug, Espessura),
  * recorta o relógio da foto e o monta em tamanho real num pulso ilustrado ou numa foto do pulso do cliente.
@@ -9,6 +9,7 @@
 'use strict';
 if (window.__IMPALA_PULSO__) return; window.__IMPALA_PULSO__ = true;
 
+var VERSION = '1.0.1';
 var SCRIPT = document.currentScript;
 var CFG = { estilo: 'completo', alvo: '', posicao: 'auto', titulo: 'No seu pulso', debug: /[?&]pulso=debug\b/.test(location.search) };
 try { Object.assign(CFG, window.IMPALA_PULSO || {}); } catch (e) {}
@@ -759,7 +760,10 @@ function Widget(host, estilo, P) {
   /* ---------- prepara o recorte ---------- */
   this.start = function () {
     if (self._started) return; self._started = true;
-    loadImg(P.img).then(function (img) {
+    /* a cópia em cache do CDN pode ter sido gravada sem o cabeçalho CORS: pede um endereço próprio (?ipz=) e, se falhar, outro tamanho */
+    function bust(u) { return /^data:|^blob:/.test(u) ? u : u + (u.indexOf('?') < 0 ? '?' : '&') + 'ipz=' + VERSION; }
+    var alt = sizeUrl(P.img, 1000);
+    loadImg(bust(P.img)).then(function (img) { return img || (alt !== P.img ? loadImg(bust(alt)) : null); }).then(function (img) {
       if (!img) throw new Error('img');
       C = makeCut(img, P);
       if (!C.ok) throw new Error(C.why);
@@ -827,6 +831,6 @@ function mount(el, o) {
   el.innerHTML = ''; el.className = ''; el.hidden = false;
   var W = new Widget(el, o.estilo === 'minimal' || o.estilo === 'minimalista' ? 'minimal' : 'completo', P); W.start(); return W;
 }
-window.ImpalaPulso = { boot: boot, mount: mount, readProduct: readProduct, makeCut: makeCut, version: '1.0' };
+window.ImpalaPulso = { boot: boot, mount: mount, readProduct: readProduct, makeCut: makeCut, version: VERSION };
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else boot();
 })();
