@@ -1,4 +1,4 @@
-/*! Impala · No seu pulso — v1.1.0
+/*! Impala · No seu pulso — v1.2.0
  * Simulador "relógio no pulso" para a página de produto da Loja Integrada.
  * Lê a primeira imagem do cadastro e as medidas da descrição (Diâmetro, Lug to Lug, Espessura),
  * recorta o relógio da foto e o monta em tamanho real num pulso ilustrado ou numa foto do pulso do cliente.
@@ -9,11 +9,12 @@
 'use strict';
 if (window.__IMPALA_PULSO__) return; window.__IMPALA_PULSO__ = true;
 
-var VERSION = '1.1.0';
+var VERSION = '1.2.0';
 var SCRIPT = document.currentScript;
-var CFG = { estilo: 'completo', alvo: '', posicao: 'auto', titulo: 'No seu pulso', debug: /[?&]pulso=debug\b/.test(location.search) };
+var CFG = { estilo: 'completo', alvo: '', posicao: 'auto', titulo: 'No seu pulso', escuro: false, foto: false, guia: '', debug: /[?&]pulso=debug\b/.test(location.search) };
 try { Object.assign(CFG, window.IMPALA_PULSO || {}); } catch (e) {}
-if (SCRIPT && SCRIPT.dataset) ['estilo', 'alvo', 'posicao', 'titulo'].forEach(function (k) { if (SCRIPT.dataset[k]) CFG[k] = SCRIPT.dataset[k]; });
+if (SCRIPT && SCRIPT.dataset) ['estilo', 'alvo', 'posicao', 'titulo', 'guia'].forEach(function (k) { if (SCRIPT.dataset[k]) CFG[k] = SCRIPT.dataset[k]; });
+if (SCRIPT && SCRIPT.dataset) { if (SCRIPT.dataset.escuro != null) CFG.escuro = true; if (SCRIPT.dataset.foto != null) CFG.foto = true; }
 
 /* ================= utilidades ================= */
 function mk(w, h) { var c = document.createElement('canvas'); c.width = Math.max(1, Math.round(w)); c.height = Math.max(1, Math.round(h)); return c; }
@@ -587,6 +588,32 @@ var CSS = [
 '.ipz-min .ipz-gen{display:inline-flex;gap:12px}',
 '.ipz.ipz-min .ipz-gen .ipz-link{border-bottom-color:transparent;color:var(--ip-mut)}.ipz-min .ipz-gen .ipz-link[aria-pressed="true"]{color:var(--ip-ink);border-bottom-color:currentColor}',
 '.ipz-min .ipz-foot{font-size:11px;color:var(--ip-mut);letter-spacing:.3px;line-height:1.5}',
+'.ipz-eye{font-size:11px;letter-spacing:3.2px;text-transform:uppercase;color:#a8915f;margin:0 0 10px;font-weight:600}',
+'.ipz.ipz-min h2{font-weight:300;letter-spacing:.5px}.ipz.ipz-min h2 b{font-weight:700}',
+'.ipz.ipz-min h3{font-size:15px;line-height:24px;letter-spacing:2px;color:var(--ip-mut);margin:0 0 16px}',
+'.ipz-ghost{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;opacity:0;transition:opacity .28s ease}',
+'.ipz-stage canvas[data-r=cv]{transition:opacity .45s ease}.ipz-stage.ipz-wait canvas[data-r=cv]{opacity:0}',
+'.ipz-meter{margin:4px 0 26px;max-width:430px}',
+'.ipz-mtrack{position:relative;display:flex;height:3px;gap:3px}',
+'.ipz-mtrack i{display:block;height:3px;background:var(--ip-line)}.ipz-mz1{flex:28}.ipz-mz2{flex:38;background:#cfc6b4!important}.ipz-mz3{flex:34}',
+'.ipz-mdot{position:absolute;top:50%;width:13px;height:13px;margin:-6.5px 0 0 -6.5px;border-radius:50%;background:var(--ip-ink);box-shadow:0 0 0 3px var(--ip-bg);transition:left .35s cubic-bezier(.2,.8,.2,1)}',
+'.ipz-mlab{display:flex;margin-top:10px;font-size:10px;letter-spacing:2px;text-transform:uppercase;color:#b9b6b4}',
+'.ipz-mlab span{transition:color .25s}.ipz-mlab span:nth-child(1){flex:28}.ipz-mlab span:nth-child(2){flex:38;text-align:center}.ipz-mlab span:nth-child(3){flex:34;text-align:right}',
+'.ipz-mlab span.on{color:var(--ip-ink);font-weight:700}',
+'.ipz-hint{font-size:11px;color:var(--ip-mut);letter-spacing:.4px}',
+'.ipz .ipz-guide{font-size:11.5px;color:var(--ip-ink);letter-spacing:.4px;text-decoration:underline;text-underline-offset:3px}',
+'.ipz.ipz-min .ipz-opt{display:flex;align-self:stretch;border:0;gap:0}',
+'.ipz.ipz-min .ipz-opt button{flex:1;height:46px;border:1px solid var(--ip-ink);background:transparent;color:var(--ip-ink);font-size:12px;font-weight:600;letter-spacing:2.4px;padding:0 12px}',
+'.ipz.ipz-min .ipz-opt button+button{border-left:0}',
+'.ipz.ipz-min .ipz-opt button[aria-pressed="true"]{background:var(--ip-ink);color:#fff}',
+'.ipz.ipz-min .ipz-opt button:not([aria-pressed="true"]):hover{background:var(--ip-soft)}',
+'.ipz input[type=range]::-webkit-slider-runnable-track{height:1px!important}',
+'.ipz input[type=range]::-webkit-slider-thumb{width:15px!important;height:15px!important;margin-top:-7px!important;background:var(--ip-ink)!important;border:0!important;box-shadow:0 0 0 4px var(--ip-bg),0 1px 6px rgba(0,0,0,.25)!important}',
+'.ipz input[type=range]::-moz-range-thumb{width:15px;height:15px;background:var(--ip-ink);border:0}',
+'.ipz input[type=range]::-moz-range-track{height:1px}.ipz input[type=range]::-moz-range-progress{height:1px}',
+'.ipz.ipz-min .ipz-lab{font-size:11px;letter-spacing:2px}.ipz.ipz-min .ipz-lab b{font-size:12px;letter-spacing:1.5px}',
+'.ipz.ipz-min .ipz-foot{font-size:11px;color:#a9a6a5}',
+'@media (prefers-reduced-motion:reduce){.ipz-ghost,.ipz-mdot,.ipz-stage canvas[data-r=cv]{transition:none}}',
 '@media (max-width:767px){.ipz-min .ipz-row{display:block}.ipz-min .ipz-col{width:100%}.ipz-min .ipz-text{padding:20px 0 0;width:90%;margin:auto}.ipz-min h2{font-size:26px;line-height:36px}.ipz-min h3{font-size:16px;line-height:26px}}',
 /* completo */
 '.ipz-full{margin:30px auto;max-width:1140px;border:1px solid var(--ip-line);background:var(--ip-bg);display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,1fr)}',
@@ -625,18 +652,21 @@ function Widget(host, estilo, P) {
   var tonesHtml = TONES.map(function (t, i) { return '<button type="button" class="ipz-tone" role="radio" aria-label="Tom de pele: ' + t[1] + '" title="' + t[1] + '" data-t="' + i + '" style="background:' + toneBg(t[0]) + '"></button>'; }).join('');
   var fileInputs = '<input type="file" accept="image/*,.heic,.heif" class="ipz-vh" data-r="pick"><input type="file" accept="image/*" capture="environment" class="ipz-vh" data-r="cam">';
   if (min) {
+    var tw = String(CFG.titulo).split(' '), tt = tw.length > 1 ? '<b>' + esc(tw.slice(0, -1).join(' ')) + '</b> ' + esc(tw[tw.length - 1]) : '<b>' + esc(CFG.titulo) + '</b>';
     host.innerHTML =
-      '<div class="ipz-row"><div class="ipz-col"><div class="ipz-stage"><canvas data-r="cv" role="img" aria-label="' + esc(nm) + ' no pulso, em tamanho real"></canvas><div class="ipz-load" data-r="load">Montando no pulso…</div><div class="ipz-cap" data-r="cap" hidden></div></div></div>' +
-      '<div class="ipz-col ipz-text"><h2><b>' + esc(CFG.titulo) + '</b></h2><h3 data-r="h3"></h3><p data-r="fitp"></p>' +
+      '<div class="ipz-row"><div class="ipz-col"><div class="ipz-stage"><canvas data-r="cv" role="img" aria-label="' + esc(nm) + ' no pulso, em tamanho real"></canvas><canvas class="ipz-ghost" data-r="ghost" aria-hidden="true"></canvas><div class="ipz-load" data-r="load">Montando no pulso</div><div class="ipz-cap" data-r="cap" hidden></div></div></div>' +
+      '<div class="ipz-col ipz-text"><div class="ipz-eye">Provador virtual</div><h2>' + tt + '</h2><h3 data-r="h3"></h3><p data-r="fitp"></p>' +
+      '<div class="ipz-meter" data-r="meter" aria-hidden="true"><div class="ipz-mtrack"><i class="ipz-mz1"></i><i class="ipz-mz2"></i><i class="ipz-mz3"></i><span class="ipz-mdot" data-r="mdot"></span></div><div class="ipz-mlab"><span data-z="0">Discreto</span><span data-z="1">Ideal</span><span data-z="2">Grande</span></div></div>' +
       '<div class="ipz-ctl">' +
-        '<div data-r="pfk" class="ipz-field" style="gap:22px">' +
-          '<div class="ipz-field"><div class="ipz-lab"><span>Circunferência do pulso</span><b data-r="co"></b></div><input type="range" min="13" max="22" step="0.5" data-r="c" aria-label="Circunferência do pulso em centímetros"><div class="ipz-scale"><span>13 cm</span><span>Meça logo abaixo do osso do pulso</span><span>22 cm</span></div></div>' +
+        '<div data-r="pfk" class="ipz-field" style="gap:26px">' +
+          '<div class="ipz-field"><div class="ipz-lab"><span>Circunferência do pulso</span><b data-r="co"></b></div><input type="range" min="13" max="22" step="0.5" data-r="c" aria-label="Circunferência do pulso em centímetros">' +
+            (CFG.guia ? '<a class="ipz-guide" href="' + esc(CFG.guia) + '" target="_blank" rel="noopener">Não sabe a sua medida? Descubra a medida do seu pulso</a>' : '<div class="ipz-hint">Meça com uma fita logo abaixo do osso do pulso</div>') + '</div>' +
           '<div class="ipz-field"><div class="ipz-lab"><span>Tom de pele</span><b data-r="tn"></b></div><span class="ipz-tones" role="radiogroup" aria-label="Tom de pele" data-r="tones">' + tonesHtml + '</span></div>' +
           '<div class="ipz-opt" role="group" aria-label="Pulso"><button type="button" data-g="m">Masculino</button><button type="button" data-g="f">Feminino</button></div></div>' +
         '<div data-r="pfoto" hidden><p class="ipz-msg" data-r="msg" style="margin:0"></p><div class="ipz-line" style="margin-top:10px"><button type="button" class="ipz-link" data-a="pick">Escolher foto</button><button type="button" class="ipz-link" data-a="cam">Tirar foto</button><button type="button" class="ipz-link" data-a="remark" hidden>Marcar de novo</button></div>' +
         '<div class="ipz-lab" style="margin-top:12px"><span>Diâmetro do relógio da foto</span><span><input type="number" class="ipz-num" min="20" max="60" step="0.5" data-r="refmm" aria-label="Diâmetro em milímetros do relógio que aparece na foto"> mm</span></div></div>' +
-        '<div class="ipz-acts"><button type="button" class="ipz-act" data-a="night" aria-pressed="false" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5Z"/></svg><span>Ver no escuro</span></button><button type="button" class="ipz-act" data-a="mode" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 8h3l2-2.5h6L17 8h3v11H4z"/><circle cx="12" cy="13" r="3.6"/></svg><span>Ver na foto do meu pulso</span></button></div>' +
-        '<div class="ipz-foot">Simulação em tamanho real a partir da foto e das medidas do produto. Sua foto não sai do seu aparelho.</div>' +
+        ((CFG.escuro || CFG.foto) ? '<div class="ipz-acts">' + (CFG.escuro ? '<button type="button" class="ipz-act" data-a="night" aria-pressed="false" hidden><span>Ver no escuro</span></button>' : '') + (CFG.foto ? '<button type="button" class="ipz-act" data-a="mode" aria-pressed="false"><span>Ver na foto do meu pulso</span></button>' : '') + '</div>' : '') +
+        '<div class="ipz-foot">Simulação em tamanho real, feita a partir da foto e das medidas do produto.</div>' +
       '</div>' + fileInputs + '</div></div>';
   } else {
     host.innerHTML =
@@ -645,7 +675,7 @@ function Widget(host, estilo, P) {
       '<p class="ipz-sub">Veja o ' + esc(nm) + ' em tamanho real, num pulso do seu tamanho ou numa foto do seu próprio pulso.</p>' +
       '<div class="ipz-fit" data-r="fit"><i></i><div><b></b><small></small></div></div>' +
       '<dl class="ipz-specs" data-r="specs"></dl>' +
-      '<div class="ipz-seg" role="group" aria-label="Tipo de pulso"><button type="button" data-a="fk" aria-pressed="true">Pulso ilustrado</button><button type="button" data-a="foto" aria-pressed="false">Foto do meu pulso</button></div>' +
+      (CFG.foto ? '' : '<!--') + '<div class="ipz-seg" role="group" aria-label="Tipo de pulso"><button type="button" data-a="fk" aria-pressed="true">Pulso ilustrado</button><button type="button" data-a="foto" aria-pressed="false">Foto do meu pulso</button></div>' + (CFG.foto ? '' : '-->') +
       '<div class="ipz-grp" data-r="pfk"><div class="ipz-lab"><span>Circunferência do pulso</span><b data-r="co"></b></div><input type="range" min="13" max="22" step="0.5" data-r="c" aria-label="Circunferência do pulso em centímetros">' +
         '<div class="ipz-lab"><span>Tom de pele</span><b data-r="tn"></b></div><span class="ipz-tones" role="radiogroup" aria-label="Tom de pele" data-r="tones">' + tonesHtml + '</span>' +
         '<div class="ipz-opt" role="group" aria-label="Pulso"><button type="button" data-g="m">Masculino</button><button type="button" data-g="f">Feminino</button></div>' +
@@ -676,15 +706,16 @@ function Widget(host, estilo, P) {
     var rm = host.querySelector('[data-a="remark"]'); if (rm) rm.hidden = !F.img;
     if (min) {
       $('h3').textContent = fmt(P.diam, 1) + ' mm' + (S.mode === 'fk' ? ' · pulso de ' + fmt(S.c, 1) + ' cm' : ' · na sua foto');
+      var md = $('mdot'); if (md && fit) { var L2 = P.l2l || P.diam * 1.2, rr = L2 / (0.85 * 0.343 * S.c * 10), pos = Math.max(0.02, Math.min(0.98, (rr - 0.62) / (1.26 - 0.62))); md.style.left = (pos * 100) + '%'; var z = rr < 0.8 ? 0 : rr <= 1.04 ? 1 : 2; host.querySelectorAll('.ipz-mlab span').forEach(function (e) { e.classList.toggle('on', +e.dataset.z === z); }); }
       $('fitp').textContent = fit ? 'Com ' + fmt(P.diam, 1) + ' mm de diâmetro' + (P.l2l ? ' e ' + fmt(P.l2l, 1) + ' mm de uma alça à outra' : '') + ', o ' + nm + ' ' + fit.s : '';
-      var mb = host.querySelector('[data-a="mode"]'); mb.querySelector('span').textContent = S.mode === 'fk' ? 'Ver na foto do meu pulso' : 'Voltar ao pulso ilustrado'; mb.setAttribute('aria-pressed', S.mode === 'foto' ? 'true' : 'false');
-      var nb = host.querySelector('[data-a="night"]'); nb.hidden = !P.lume; nb.setAttribute('aria-pressed', S.night ? 'true' : 'false'); nb.querySelector('span').textContent = S.night ? 'Ver de dia' : (P.led && !P.lume ? 'Acender a luz' : 'Ver no escuro');
+      var mb = host.querySelector('[data-a="mode"]'); if (mb) mb.querySelector('span').textContent = S.mode === 'fk' ? 'Ver na foto do meu pulso' : 'Voltar ao pulso ilustrado'; if (mb) mb.setAttribute('aria-pressed', S.mode === 'foto' ? 'true' : 'false');
+      var nb = host.querySelector('[data-a="night"]'); if (nb) { nb.hidden = !P.lume; nb.setAttribute('aria-pressed', S.night ? 'true' : 'false'); nb.querySelector('span').textContent = S.night ? 'Ver de dia' : (P.led && !P.lume ? 'Acender a luz' : 'Ver no escuro'); }
     } else {
       var fb = $('fit'); if (fit) { fb.hidden = false; fb.querySelector('i').style.background = fit.c; fb.querySelector('b').textContent = fit.t + ' num pulso de ' + fmt(S.c, 1) + ' cm'; fb.querySelector('small').textContent = fit.tip; } else fb.hidden = true;
       $('specs').innerHTML = [['Diâmetro', P.diam], ['Lug to lug', P.l2l], ['Espessura', P.esp]].map(function (x) { return '<div><dt>' + x[0] + '</dt><dd>' + (x[1] ? fmt(x[1], 1) + ' mm' : '—') + '</dd></div>'; }).join('');
       host.querySelectorAll('[data-a="fk"],[data-a="foto"]').forEach(function (b) { b.setAttribute('aria-pressed', b.dataset.a === S.mode ? 'true' : 'false'); });
       $('co2').textContent = fmt(S.c, 1) + ' cm'; $('c2').value = S.c;
-      $('luzw').hidden = !P.lume;
+      $('luzw').hidden = !P.lume || !CFG.escuro;
       host.querySelectorAll('[data-l]').forEach(function (b) { b.setAttribute('aria-pressed', (+b.dataset.l === 1) === S.night ? 'true' : 'false'); });
       host.querySelector('[data-l="1"]').textContent = P.led && !(/lumin/i.test(P.text)) ? '💡 Luz acesa' : '☾ No escuro';
       $('minw').hidden = !(S.night && !P.led); $('mino').textContent = S.mins; $('mins').value = S.mins;
@@ -697,7 +728,8 @@ function Widget(host, estilo, P) {
   function save() { lsSet({ g: S.g, t: S.t, c: S.c, refmm: F.refmm }); }
 
   /* ---------- desenho ---------- */
-  var raf = 0; function draw() { cancelAnimationFrame(raf); raf = requestAnimationFrame(render); }
+  var raf = 0, fade = true, drawn = false;
+  function draw() { cancelAnimationFrame(raf); raf = requestAnimationFrame(function () { var gh = $('ghost'); if (fade && drawn && gh) { gh.width = cv.width; gh.height = cv.height; gh.getContext('2d').drawImage(cv, 0, 0); gh.style.transition = 'none'; gh.style.opacity = 1; } render(); drawn = true; if (fade && gh) { void gh.offsetWidth; gh.style.transition = ''; gh.style.opacity = 0; } fade = true; }); }
   function lumeLayer(g, place, scale) {
     g.save(); g.globalCompositeOperation = 'multiply'; g.fillStyle = 'rgb(24,27,38)'; g.fillRect(0, 0, cv.width, cv.height); g.restore();
     var gl = glowOf(C, P, S.col); if (!gl) return false;
@@ -810,7 +842,7 @@ function Widget(host, estilo, P) {
     if (a === 'dl') { track('baixar'); cv.toBlob(function (bl) { if (!bl) return; var u = URL.createObjectURL(bl), l = document.createElement('a'); l.href = u; l.download = (P.sku || 'relogio').replace(/[^\w-]+/g, '_') + '_no_pulso.jpg'; document.body.appendChild(l); l.click(); setTimeout(function () { URL.revokeObjectURL(u); l.remove(); }, 1000); }, 'image/jpeg', 0.9); }
   });
   var tmr;
-  function onC(v) { S.c = +v; ui(); clearTimeout(tmr); tmr = setTimeout(function () { save(); draw(); track('circunferencia', { cm: S.c }); }, 120); }
+  function onC(v) { S.c = +v; ui(); fade = false; draw(); clearTimeout(tmr); tmr = setTimeout(function () { save(); track('circunferencia', { cm: S.c }); }, 400); }
   $('c').addEventListener('input', function () { onC(this.value); });
   if ($('c2')) $('c2').addEventListener('input', function () { onC(this.value); });
   if ($('mins')) $('mins').addEventListener('input', function () { S.mins = +this.value; $('mino').textContent = S.mins; draw(); });
@@ -834,7 +866,7 @@ function Widget(host, estilo, P) {
       if (!img) throw new Error('img');
       C = makeCut(img, P);
       if (!C.ok) throw new Error(C.why);
-      $('load').remove(); draw(); track('exibido', { sku: P.sku });
+      $('load').remove(); stage.classList.add('ipz-wait'); render(); drawn = true; requestAnimationFrame(function () { stage.classList.remove('ipz-wait'); }); track('exibido', { sku: P.sku });
       if (CFG.debug) debugPanel(host, C, P);
     }).catch(function (err) {
       log('falhou', err); host.hidden = true; /* sem simulação confiável: some sem deixar buraco na página */

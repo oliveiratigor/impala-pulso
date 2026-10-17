@@ -11,3 +11,8 @@ Instalação (Visual › Incluir código HTML › rodapé › Página de produto
 - `data-estilo`: `minimal` ou `completo`
 - `data-teste`: só aparece com `?pulso=1` no endereço; apague para liberar a todos
 - `?pulso=debug`: mostra o recorte e as medidas lidas
+
+Opções extras na mesma linha:
+- `data-guia="URL"`: mostra o link para o guia de medição do pulso
+- `data-escuro`: liga o botão "Ver no escuro" (lume)
+- `data-foto`: liga "Ver na foto do meu pulso"
