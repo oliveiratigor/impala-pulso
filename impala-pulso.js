@@ -1,4 +1,4 @@
-/*! Impala · No seu pulso — v1.3.0
+/*! Impala · No seu pulso — v1.4.0
  * Simulador "relógio no pulso" para a página de produto da Loja Integrada.
  * Lê a primeira imagem do cadastro e as medidas da descrição (Diâmetro, Lug to Lug, Espessura),
  * recorta o relógio da foto e o monta em tamanho real num pulso ilustrado ou numa foto do pulso do cliente.
@@ -9,7 +9,7 @@
 'use strict';
 if (window.__IMPALA_PULSO__) return; window.__IMPALA_PULSO__ = true;
 
-var VERSION = '1.3.0';
+var VERSION = '1.4.0';
 var SCRIPT = document.currentScript;
 var CFG = { estilo: 'completo', alvo: '', posicao: 'auto', titulo: 'No seu pulso', escuro: false, foto: false, guia: '', debug: /[?&]pulso=debug\b/.test(location.search) };
 try { Object.assign(CFG, window.IMPALA_PULSO || {}); } catch (e) {}
@@ -401,12 +401,12 @@ function makeWrist(o) {
     }
   }
   sgc.putImageData(id, 0, 0); g.imageSmoothingEnabled = true; g.imageSmoothingQuality = 'high'; g.drawImage(sc, 0, 0, W, H);
-  return (WR_CACHE[key] = { cv: cv, cx: xw, cy: yc, pxmm: PX, wmm: 0.343 * o.c * 10, ww: ww });
+  return (WR_CACHE[key] = { cv: cv, cx: xw, cy: yc, pxmm: PX, wmm: 0.343 * o.c * 10, ww: ww, top: TOP, bot: BOT });
 }
 /* pulseira contornando o pulso: caixa e alças planas, depois a pulseira segue a seção elíptica do pulso e escurece até a borda */
 function covOf(C) {
   if (C._cov !== undefined) return C._cov; C._cov = null;
-  try { var p = cx2d(C.cv).getImageData(0, 0, C.w, C.h).data, cov = new Float32Array(C.h), mx = 0; for (var y = 0; y < C.h; y++) { var n = 0; for (var x = 0; x < C.w; x++) if (p[(y * C.w + x) * 4 + 3] > 100) n++; cov[y] = n; if (n > mx) mx = n; } var t = mx * 0.22, a = 0, b = C.h - 1; while (a < C.h && cov[a] < t) a++; while (b > 0 && cov[b] < t) b--; C._cov = { top: a, bot: b }; } catch (e) {}
+  try { var p = cx2d(C.cv).getImageData(0, 0, C.w, C.h).data, cov = new Float32Array(C.h), mx = 0; for (var y = 0; y < C.h; y++) { var n = 0; for (var x = 0; x < C.w; x++) if (p[(y * C.w + x) * 4 + 3] > 100) n++; cov[y] = n; if (n > mx) mx = n; } var t = mx * 0.22, a = 0, b = C.h - 1; while (a < C.h && cov[a] < t) a++; while (b > 0 && cov[b] < t) b--; C._cov = { top: a, bot: b, arr: cov }; } catch (e) {}
   return C._cov;
 }
 function drawWrapped(g, C, scale, A) {
@@ -415,19 +415,40 @@ function drawWrapped(g, C, scale, A) {
   function th(sv) { if (sv <= 0) return 0; if (sv >= S[N]) return Math.PI / 2; var lo = 0, hi = N; while (hi - lo > 1) { var m = (lo + hi) >> 1; if (S[m] < sv) lo = m; else hi = m; } return TH[lo] + (TH[hi] - TH[lo]) * (sv - S[lo]) / (S[hi] - S[lo] || 1); }
   var thL = L < A ? Math.asin(L / A) : Math.PI / 2, sL = 0;
   for (var i2 = 1; i2 <= N; i2++) if (TH[i2] >= thL) { sL = S[i2 - 1] + (S[i2] - S[i2 - 1]) * (thL - TH[i2 - 1]) / (TH[i2] - TH[i2 - 1]); break; }
-  var need = Math.max(0, S[N] - sL), Ym = Math.max(L, A) + 4, O = mk(Math.ceil(w), Math.ceil(2 * Ym)), o = O.getContext('2d');
+  var need = Math.max(0, S[N] - sL), Ym = Math.max(L, A * 1.12) + 4, O = mk(Math.ceil(w), Math.ceil(2 * Ym)), o = O.getContext('2d');
   var r0 = Math.max(0, C.cy - L / scale), r1 = Math.min(ih, C.cy + L / scale); o.drawImage(cut, 0, r0, iw, r1 - r0, 0, Ym + (r0 - C.cy) * scale, w, (r1 - r0) * scale);
   var cov = covOf(C), cr = C.r * scale;
+  /* até onde a pulseira mantém a largura cheia (evita usar a ponta afinada da foto) */
+  function fullEnd(sd) {
+    if (!cov) return sd < 0 ? 0 : ih - 1;
+    var arr = cov.arr, st = Math.round(C.cy + sd * (L / scale + 0.06 * C.r)), ref = 0, n = 0, r;
+    for (var k = 0; k < 10; k++) { r = st + sd * k; if (r >= 0 && r < ih) { ref += arr[r]; n++; } } ref /= n || 1;
+    r = st; while (r > 1 && r < ih - 2 && arr[r] >= 0.9 * ref) r += sd;
+    return r - sd * 3;
+  }
   [-1, 1].forEach(function (sd) {
-    var endRow = cov ? (sd < 0 ? cov.top : cov.bot) : (sd < 0 ? 0 : ih - 1), avail = Math.abs(endRow - C.cy) * scale - L, t0 = 0.1 * cr, T = Math.max(4, Math.min(0.5 * cr, avail - t0 - 0.05 * cr)), dCut = avail >= need ? need : Math.max(0, avail - 0.14 * cr);
-    var dd = 1.2, prev = A * Math.sin(th(sL));
+    var endRow = fullEnd(sd), avail = Math.max(0, Math.abs(endRow - C.cy) * scale - L), t0 = Math.min(0.1 * cr, avail * 0.3), T = Math.max(4, Math.min(0.5 * cr, avail - t0 - 2)), dCut = avail >= need ? need : Math.max(0, avail - 2);
+    /* repetição espelhada entre t0 e dCut: sem emendas (a textura vai e volta) */
+    var Pm = dCut - t0; function mir(d) { if (Pm < 4) return t0 + ((d - dCut) % T); var u = (d - dCut) % (2 * Pm); return u < Pm ? dCut - u : t0 + (u - Pm); }
+    var dd = 1.2, prev = A * Math.sin(th(sL)), lastSrc = 0;
+    o.globalCompositeOperation = 'source-over';
     for (var d = 0; d < need; d += dd) {
-      var t2 = th(sL + d + dd), xp = A * Math.sin(t2), k = A * Math.cos(t2) / Math.hypot(A * Math.cos(t2), B * Math.sin(t2)), src = d <= dCut ? d : t0 + ((d - dCut) % T);
+      var t2 = th(sL + d + dd), xp = A * Math.sin(t2), src = d <= dCut ? d : mir(d);
       var sr = C.cy + sd * (L + src) / scale, sh = dd / scale; if (sd < 0) sr -= sh; if (sr < 0 || sr + sh > ih) { prev = xp; continue; }
       var dy0 = Ym + sd * prev, dy1 = Ym + sd * xp, yy = Math.min(dy0, dy1), hh = Math.max(0.7, Math.abs(dy1 - dy0) + 0.5);
-      o.globalCompositeOperation = 'source-over'; o.drawImage(cut, 0, sr, iw, sh, 0, yy, w, hh);
-      o.globalCompositeOperation = 'source-atop'; o.fillStyle = 'rgba(0,0,0,' + Math.min(0.8, (1 - k) * 0.85 + (d > 0 ? 0.05 : 0)) + ')'; o.fillRect(0, yy, w, hh); prev = xp;
+      o.drawImage(cut, 0, sr, iw, sh, 0, yy, w, hh); prev = xp; lastSrc = src;
     }
+    /* sobra além da lateral do pulso (a máscara do braço recorta seguindo o contorno) */
+    var srx = C.cy + sd * (L + lastSrc) / scale;
+    if (srx > 2 && srx < ih - 3) for (var e = 0; e < 0.1 * A; e += 1.5) { var yy2 = sd < 0 ? Ym - A - e - 1.5 : Ym + A + e; o.drawImage(cut, 0, sd < 0 ? srx - 1.5 / scale : srx, iw, 1.5 / scale, 0, yy2, w, 1.7); }
+    /* sombreamento contínuo da curva (gradiente único, sem faixas) */
+    var y0 = Ym + sd * A * Math.sin(th(sL)), y1 = Ym + sd * A * 1.12, gr = o.createLinearGradient(0, y0, 0, y1);
+    for (var j = 0; j <= 20; j++) {
+      var dj = need * j / 20, tj = th(sL + dj), yj = Ym + sd * A * Math.sin(tj), kj = A * Math.cos(tj) / Math.hypot(A * Math.cos(tj), B * Math.sin(tj));
+      var f = (yj - y0) / (y1 - y0); if (f >= 0 && f <= 1) gr.addColorStop(f, 'rgba(0,0,0,' + Math.min(0.8, (1 - kj) * 0.85 + (j ? 0.04 : 0)).toFixed(3) + ')');
+    }
+    gr.addColorStop(1, 'rgba(0,0,0,.84)');
+    o.globalCompositeOperation = 'source-atop'; o.fillStyle = gr; o.fillRect(0, Math.min(y0, y1), w, Math.abs(y1 - y0) + 2);
   });
   o.globalCompositeOperation = 'source-over'; g.drawImage(O, x, -Ym);
 }
@@ -785,6 +806,12 @@ function Widget(host, estilo, P) {
       var scale = (P.diam / 2 * r.pxmm) / C.r;
       var place = function (q) { q.translate(OW / 2, OH / 2); };
       var WL = mk(OW, OH), wg = WL.getContext('2d'); wg.save(); place(wg); drawWrapped(wg, C, scale, r.ww); wg.restore();
+      /* máscara: silhueta do braço (onde a pulseira dá a volta) + faixa plana da caixa e alças (que pode passar do pulso fino) */
+      var M = mk(OW, OH), mg = M.getContext('2d'), ox = r.cx - OW / 2, oy = r.cy - OH / 2, Lp = C.L * scale;
+      mg.beginPath(); mg.moveTo(-2, r.top[0] - oy); for (var mx = 0; mx < OW; mx += 3) mg.lineTo(mx, r.top[Math.min(r.top.length - 1, mx + ox)] - oy - 0.5);
+      for (mx = OW - 1; mx >= 0; mx -= 3) mg.lineTo(mx, r.bot[Math.min(r.bot.length - 1, mx + ox)] - oy + 0.5); mg.closePath(); mg.fillStyle = '#000'; mg.fill();
+      mg.fillRect(0, OH / 2 - Lp, OW, 2 * Lp);
+      wg.globalCompositeOperation = 'destination-in'; wg.drawImage(M, 0, 0); wg.globalCompositeOperation = 'source-over';
       /* sombra do relógio sobre a pele: uma larga e suave, outra curta de contato */
       g.save(); g.shadowColor = 'rgba(40,20,10,.30)'; g.shadowBlur = 34; g.shadowOffsetX = 6; g.shadowOffsetY = 16; g.drawImage(WL, 0, 0); g.restore();
       g.save(); g.shadowColor = 'rgba(30,15,8,.42)'; g.shadowBlur = 7; g.shadowOffsetX = 1; g.shadowOffsetY = 4; g.drawImage(WL, 0, 0); g.restore();
