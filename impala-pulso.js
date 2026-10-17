@@ -1,4 +1,4 @@
-/*! Impala · No seu pulso — v1.2.0
+/*! Impala · No seu pulso — v1.3.0
  * Simulador "relógio no pulso" para a página de produto da Loja Integrada.
  * Lê a primeira imagem do cadastro e as medidas da descrição (Diâmetro, Lug to Lug, Espessura),
  * recorta o relógio da foto e o monta em tamanho real num pulso ilustrado ou numa foto do pulso do cliente.
@@ -9,7 +9,7 @@
 'use strict';
 if (window.__IMPALA_PULSO__) return; window.__IMPALA_PULSO__ = true;
 
-var VERSION = '1.2.0';
+var VERSION = '1.3.0';
 var SCRIPT = document.currentScript;
 var CFG = { estilo: 'completo', alvo: '', posicao: 'auto', titulo: 'No seu pulso', escuro: false, foto: false, guia: '', debug: /[?&]pulso=debug\b/.test(location.search) };
 try { Object.assign(CFG, window.IMPALA_PULSO || {}); } catch (e) {}
@@ -514,15 +514,20 @@ function photoLoad() {
 }
 
 /* ================= caimento ================= */
+/* caimento: o lug to lug (altura do relógio, de ponta a ponta das alças) comparado à largura do pulso visto de cima.
+   Largura ≈ 34,3% da circunferência (seção do pulso ~ elipse; médias antropométricas). A parte plana do dorso,
+   onde as alças apoiam sem "flutuar", fica em torno de 85% dessa largura. */
+var FIT_Z = [68, 88, 100]; /* % da largura: discreto | ideal | grande | passa da borda */
 function fitOf(P, C) {
-  var ww = 0.343 * C * 10, flat = 0.85 * ww, dm = P.diam || 0, l2l = P.l2l || (dm ? dm * 1.2 : 0);
-  if (!l2l) return null; var r = l2l / flat, cs = fmt(C, 1);
-  var tip = 'Lug to lug ' + fmt(l2l, 1) + ' mm' + (P.l2l ? '' : ' (estimado)') + ' para um pulso de ' + cs + ' cm, com cerca de ' + Math.round(flat) + ' mm úteis no dorso.';
-  if (r < 0.80) return { k: 'pequeno', t: 'Veste pequeno', c: '#b7791f', s: 'fica discreto num pulso de ' + cs + ' cm, com bastante pulso aparecendo dos lados.', tip: tip };
-  if (r <= 0.97) return { k: 'bem', t: 'Veste bem', c: '#2f855a', s: 'veste bem num pulso de ' + cs + ' cm: as alças ficam dentro do pulso.', tip: tip };
-  if (r <= 1.04) return { k: 'limite', t: 'No limite do pulso', c: '#b7791f', s: 'fica no limite num pulso de ' + cs + ' cm: as alças chegam à borda do pulso.', tip: tip };
-  if (r <= 1.12) return { k: 'grande', t: 'Grande para o pulso', c: '#c53030', s: 'fica grande num pulso de ' + cs + ' cm: as alças passam um pouco da borda.', tip: tip };
-  return { k: 'muito', t: 'Muito grande para o pulso', c: '#c53030', s: 'fica muito grande num pulso de ' + cs + ' cm: as alças passam bem da borda.', tip: tip };
+  var w = 0.343 * C * 10, dm = P.diam || 0, l2l = P.l2l || (dm ? dm * 1.2 : 0);
+  if (!l2l) return null; var pct = l2l / w * 100, cs = fmt(C, 1), est = P.l2l ? '' : ' (estimado)';
+  var base = { w: w, l2l: l2l, pct: pct, tip: 'Pulso de ' + cs + ' cm ≈ ' + Math.round(w) + ' mm de largura vista de cima. Lug to lug ' + fmt(l2l, 1) + ' mm' + est + ' = ' + Math.round(pct) + '% dessa largura.' };
+  function o(k, t, c, s) { return Object.assign({ k: k, t: t, c: c, s: s }, base); }
+  if (pct < FIT_Z[0]) return o('pequeno', 'Veste discreto', '#a8915f', 'fica discreto: sobra bastante pulso dos lados.');
+  if (pct <= 85) return o('bem', 'Veste bem', '#2f855a', 'veste bem: as alças ficam dentro do pulso, com folga.');
+  if (pct <= FIT_Z[1]) return o('limite', 'No limite ideal', '#a8915f', 'fica no limite do ideal: as alças chegam perto da borda do pulso.');
+  if (pct <= FIT_Z[2]) return o('grande', 'Grande para o pulso', '#b44a3c', 'fica grande: as alças chegam à borda do pulso.');
+  return o('muito', 'Passa da borda do pulso', '#b44a3c', 'fica muito grande: as alças passam da borda do pulso.');
 }
 
 /* ================= estilos ================= */
@@ -595,10 +600,15 @@ var CSS = [
 '.ipz-stage canvas[data-r=cv]{transition:opacity .45s ease}.ipz-stage.ipz-wait canvas[data-r=cv]{opacity:0}',
 '.ipz-meter{margin:4px 0 26px;max-width:430px}',
 '.ipz-mtrack{position:relative;display:flex;height:3px;gap:3px}',
-'.ipz-mtrack i{display:block;height:3px;background:var(--ip-line)}.ipz-mz1{flex:28}.ipz-mz2{flex:38;background:#cfc6b4!important}.ipz-mz3{flex:34}',
+'.ipz-mtrack i{display:block;height:3px;background:var(--ip-line)}.ipz-mz1{flex:18}.ipz-mz2{flex:20;background:#cfc6b4!important}.ipz-mz3{flex:22}',
+'.ipz-medge{position:absolute;left:83.33%;top:-5px;width:1px;height:13px;background:var(--ip-mut)}',
+'.ipz-medge:after{content:"borda do pulso";position:absolute;bottom:15px;left:50%;transform:translateX(-50%);white-space:nowrap;font-size:9px;letter-spacing:1.4px;text-transform:uppercase;color:var(--ip-mut)}',
+'.ipz-meter{padding-top:16px}',
+'.ipz-mpct{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:30px;font-size:11px;letter-spacing:2px;text-transform:uppercase;color:var(--ip-mut)}.ipz-mpct b{font-size:22px;letter-spacing:.5px;color:var(--ip-ink);font-weight:600}',
+'.ipz .ipz-dims{background:none;border:0;padding:0;margin-top:14px;font-size:11px;letter-spacing:1.6px;text-transform:uppercase;color:var(--ip-ink);text-decoration:underline;text-underline-offset:4px;font-weight:600}',
 '.ipz-mdot{position:absolute;top:50%;width:13px;height:13px;margin:-6.5px 0 0 -6.5px;border-radius:50%;background:var(--ip-ink);box-shadow:0 0 0 3px var(--ip-bg);transition:left .35s cubic-bezier(.2,.8,.2,1)}',
 '.ipz-mlab{display:flex;margin-top:10px;font-size:10px;letter-spacing:2px;text-transform:uppercase;color:#b9b6b4}',
-'.ipz-mlab span{transition:color .25s}.ipz-mlab span:nth-child(1){flex:28}.ipz-mlab span:nth-child(2){flex:38;text-align:center}.ipz-mlab span:nth-child(3){flex:34;text-align:right}',
+'.ipz-mlab span{transition:color .25s}.ipz-mlab span:nth-child(1){flex:18}.ipz-mlab span:nth-child(2){flex:20;text-align:center}.ipz-mlab span:nth-child(3){flex:22;text-align:right}',
 '.ipz-mlab span.on{color:var(--ip-ink);font-weight:700}',
 '.ipz-hint{font-size:11px;color:var(--ip-mut);letter-spacing:.4px}',
 '.ipz .ipz-guide{font-size:11.5px;color:var(--ip-ink);letter-spacing:.4px;text-decoration:underline;text-underline-offset:3px}',
@@ -656,7 +666,7 @@ function Widget(host, estilo, P) {
     host.innerHTML =
       '<div class="ipz-row"><div class="ipz-col"><div class="ipz-stage"><canvas data-r="cv" role="img" aria-label="' + esc(nm) + ' no pulso, em tamanho real"></canvas><canvas class="ipz-ghost" data-r="ghost" aria-hidden="true"></canvas><div class="ipz-load" data-r="load">Montando no pulso</div><div class="ipz-cap" data-r="cap" hidden></div></div></div>' +
       '<div class="ipz-col ipz-text"><div class="ipz-eye">Provador virtual</div><h2>' + tt + '</h2><h3 data-r="h3"></h3><p data-r="fitp"></p>' +
-      '<div class="ipz-meter" data-r="meter" aria-hidden="true"><div class="ipz-mtrack"><i class="ipz-mz1"></i><i class="ipz-mz2"></i><i class="ipz-mz3"></i><span class="ipz-mdot" data-r="mdot"></span></div><div class="ipz-mlab"><span data-z="0">Discreto</span><span data-z="1">Ideal</span><span data-z="2">Grande</span></div></div>' +
+      '<div class="ipz-meter" data-r="meter"><div class="ipz-mpct"><span>Ocupa do seu pulso</span><b data-r="mpct"></b></div><div class="ipz-mtrack" aria-hidden="true"><i class="ipz-mz1"></i><i class="ipz-mz2"></i><i class="ipz-mz3"></i><span class="ipz-medge"></span><span class="ipz-mdot" data-r="mdot"></span></div><div class="ipz-mlab" aria-hidden="true"><span data-z="0">Discreto</span><span data-z="1">Ideal</span><span data-z="2">Grande</span></div><button type="button" class="ipz-dims" data-a="dims" aria-pressed="false">Ver as medidas no pulso</button></div>' +
       '<div class="ipz-ctl">' +
         '<div data-r="pfk" class="ipz-field" style="gap:26px">' +
           '<div class="ipz-field"><div class="ipz-lab"><span>Circunferência do pulso</span><b data-r="co"></b></div><input type="range" min="13" max="22" step="0.5" data-r="c" aria-label="Circunferência do pulso em centímetros">' +
@@ -706,8 +716,9 @@ function Widget(host, estilo, P) {
     var rm = host.querySelector('[data-a="remark"]'); if (rm) rm.hidden = !F.img;
     if (min) {
       $('h3').textContent = fmt(P.diam, 1) + ' mm' + (S.mode === 'fk' ? ' · pulso de ' + fmt(S.c, 1) + ' cm' : ' · na sua foto');
-      var md = $('mdot'); if (md && fit) { var L2 = P.l2l || P.diam * 1.2, rr = L2 / (0.85 * 0.343 * S.c * 10), pos = Math.max(0.02, Math.min(0.98, (rr - 0.62) / (1.26 - 0.62))); md.style.left = (pos * 100) + '%'; var z = rr < 0.8 ? 0 : rr <= 1.04 ? 1 : 2; host.querySelectorAll('.ipz-mlab span').forEach(function (e) { e.classList.toggle('on', +e.dataset.z === z); }); }
-      $('fitp').textContent = fit ? 'Com ' + fmt(P.diam, 1) + ' mm de diâmetro' + (P.l2l ? ' e ' + fmt(P.l2l, 1) + ' mm de uma alça à outra' : '') + ', o ' + nm + ' ' + fit.s : '';
+      var md = $('mdot'); if (md && fit) { var pos = Math.max(0.02, Math.min(0.98, (fit.pct - 50) / 60)); md.style.left = (pos * 100) + '%'; var z = fit.pct < FIT_Z[0] ? 0 : fit.pct <= FIT_Z[1] ? 1 : 2; host.querySelectorAll('.ipz-mlab span').forEach(function (e) { e.classList.toggle('on', +e.dataset.z === z); }); $('mpct').textContent = Math.round(fit.pct) + '%'; }
+      var db = host.querySelector('[data-a="dims"]'); if (db) { db.setAttribute('aria-pressed', S.dims ? 'true' : 'false'); db.textContent = S.dims ? 'Ocultar as medidas' : 'Ver as medidas no pulso'; db.hidden = S.mode !== 'fk'; }
+      $('fitp').textContent = fit ? 'Visto de cima, um pulso de ' + fmt(S.c, 1) + ' cm tem cerca de ' + Math.round(fit.w) + ' mm de largura. De uma alça à outra, o ' + nm + ' mede ' + fmt(fit.l2l, 1) + ' mm' + (P.l2l ? '' : ' (estimado)') + ' e ' + fit.s : '';
       var mb = host.querySelector('[data-a="mode"]'); if (mb) mb.querySelector('span').textContent = S.mode === 'fk' ? 'Ver na foto do meu pulso' : 'Voltar ao pulso ilustrado'; if (mb) mb.setAttribute('aria-pressed', S.mode === 'foto' ? 'true' : 'false');
       var nb = host.querySelector('[data-a="night"]'); if (nb) { nb.hidden = !P.lume; nb.setAttribute('aria-pressed', S.night ? 'true' : 'false'); nb.querySelector('span').textContent = S.night ? 'Ver de dia' : (P.led && !P.lume ? 'Acender a luz' : 'Ver no escuro'); }
     } else {
@@ -738,6 +749,32 @@ function Widget(host, estilo, P) {
     g.globalAlpha = Math.min(1, I * 0.5); g.drawImage(gl.b2, x, y, w, h); g.globalAlpha = Math.min(1, I * 0.85); g.drawImage(gl.b1, x, y, w, h); g.globalAlpha = I; g.drawImage(gl.s, x, y, w, h); g.restore();
     return true;
   }
+  /* cotas sobre a imagem: largura do pulso (vista de cima) × lug to lug */
+  function dims(g, r) {
+    var fit = fitOf(P, S.c); if (!fit) return;
+    var cx = OW / 2, cy = OH / 2, pm = r.pxmm, hw = fit.w / 2 * pm, hl = fit.l2l / 2 * pm, caseR = P.diam / 2 * pm;
+    var xW = cx - caseR - 30 * pm / 2.2, xL = cx + caseR + 8 * pm;
+    function line(x, y0, y1, col) {
+      g.save(); g.strokeStyle = col; g.fillStyle = col; g.lineWidth = 2.5;
+      g.beginPath(); g.moveTo(x, y0); g.lineTo(x, y1); g.stroke();
+      [y0, y1].forEach(function (y) { g.beginPath(); g.moveTo(x - 14, y); g.lineTo(x + 14, y); g.stroke(); });
+      g.restore();
+    }
+    function tag(x, y, top, bottom, align) {
+      g.save(); g.font = '600 26px ' + (getComputedStyle(host).fontFamily || 'sans-serif'); var w1 = g.measureText(top).width; g.font = '600 18px ' + (getComputedStyle(host).fontFamily || 'sans-serif'); var w2 = g.measureText(bottom).width;
+      var bw = Math.max(w1, w2 * 1.15) + 32, bh = 70, bx = align === 'r' ? x + 18 : x - 18 - bw;
+      g.fillStyle = 'rgba(255,255,255,.94)'; g.fillRect(bx, y - bh / 2, bw, bh);
+      g.fillStyle = '#211e1f'; g.textBaseline = 'middle'; g.font = '600 26px ' + (getComputedStyle(host).fontFamily || 'sans-serif'); g.fillText(top, bx + 16, y - 11);
+      g.fillStyle = '#8d8a8b'; g.font = '600 17px ' + (getComputedStyle(host).fontFamily || 'sans-serif'); if (g.letterSpacing !== undefined) g.letterSpacing = '2px'; g.fillText(bottom, bx + 16, y + 17);
+      g.restore();
+    }
+    line(xW, cy - hw, cy + hw, 'rgba(33,30,31,.9)'); tag(xW, cy, fmt(fit.w, 0) + ' mm', 'PULSO', 'l');
+    line(xL, cy - hl, cy + hl, 'rgba(33,30,31,.9)'); tag(xL, cy, fmt(fit.l2l, 1) + ' mm', 'ALÇA A ALÇA', 'r');
+    /* guias pontilhadas das pontas das alças até a borda do pulso */
+    g.save(); g.setLineDash([6, 8]); g.strokeStyle = 'rgba(33,30,31,.45)'; g.lineWidth = 1.5;
+    [cy - hl, cy + hl].forEach(function (y) { g.beginPath(); g.moveTo(cx - caseR * 0.6, y); g.lineTo(xL + 14, y); g.stroke(); });
+    g.restore();
+  }
   function render() {
     if (!C) return;
     var g = cv.getContext('2d');
@@ -753,6 +790,7 @@ function Widget(host, estilo, P) {
       g.save(); g.shadowColor = 'rgba(30,15,8,.42)'; g.shadowBlur = 7; g.shadowOffsetX = 1; g.shadowOffsetY = 4; g.drawImage(WL, 0, 0); g.restore();
       if (S.night) { if (!lumeLayer(g, place, scale)) cap('Este modelo não tem partes luminosas detectáveis na foto.'); else cap(P.led ? 'Luz acesa' : '☾ ' + S.mins + ' min no escuro'); }
       else cap('');
+      if (S.dims && !S.night) dims(g, r);
       return;
     }
     /* foto do cliente */
@@ -834,6 +872,7 @@ function Widget(host, estilo, P) {
     var a = b.dataset.a;
     if (a === 'fk' || a === 'foto') return setMode(a);
     if (a === 'mode') return setMode(S.mode === 'fk' ? 'foto' : 'fk');
+    if (a === 'dims') { S.dims = !S.dims; track('medidas', { on: S.dims }); ui(); draw(); return; }
     if (a === 'night') { S.night = !S.night; S.mins = S.night ? 2 : 0; track('luz', { escuro: S.night }); ui(); draw(); return; }
     if (a === 'pick') return $('pick').click();
     if (a === 'cam') return $('cam').click();
