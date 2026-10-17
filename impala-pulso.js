@@ -1,4 +1,4 @@
-/*! Impala · No seu pulso — v1.0.2
+/*! Impala · No seu pulso — v1.1.0
  * Simulador "relógio no pulso" para a página de produto da Loja Integrada.
  * Lê a primeira imagem do cadastro e as medidas da descrição (Diâmetro, Lug to Lug, Espessura),
  * recorta o relógio da foto e o monta em tamanho real num pulso ilustrado ou numa foto do pulso do cliente.
@@ -9,7 +9,7 @@
 'use strict';
 if (window.__IMPALA_PULSO__) return; window.__IMPALA_PULSO__ = true;
 
-var VERSION = '1.0.2';
+var VERSION = '1.1.0';
 var SCRIPT = document.currentScript;
 var CFG = { estilo: 'completo', alvo: '', posicao: 'auto', titulo: 'No seu pulso', debug: /[?&]pulso=debug\b/.test(location.search) };
 try { Object.assign(CFG, window.IMPALA_PULSO || {}); } catch (e) {}
@@ -322,49 +322,84 @@ function glowOf(C, P, colKey) {
   C.glow[colKey] = res; return res;
 }
 
-/* ================= pulso ilustrado (escala real: 9,46 px/mm) ================= */
-var TONES = [['#F2D3BF', 'Muito clara'], ['#E6B796', 'Clara'], ['#CF9A73', 'Média'], ['#AD7650', 'Morena'], ['#875334', 'Escura'], ['#5A3823', 'Muito escura']];
+/* ================= pulso renderizado (escala real: 11,4 px/mm) =================
+   Sombreamento por pixel, como numa foto de estúdio: volume do braço (seção quase cilíndrica), relevos anatômicos
+   (processo estiloide, tendões do dorso, prega do pulso) como mapa de altura, luz suave de cima-esquerda, cor de
+   subsuperfície quente nas sombras, textura de pele em ruído (sem riscos) e sombra macia sobre o fundo da página. */
+var TONES = [['#F1D2BD', 'Muito clara'], ['#E4B694', 'Clara'], ['#CE9A74', 'Média'], ['#A9734E', 'Morena'], ['#7E5137', 'Escura'], ['#553626', 'Muito escura']];
+function toneBg(h) { var c = hex(h), f = function (k) { return 'rgb(' + c.map(function (v) { return Math.max(0, Math.min(255, Math.round(v * k))); }).join(',') + ')'; }; return 'radial-gradient(circle at 34% 30%,' + f(1.12) + ',' + h + ' 52%,' + f(0.8) + ')'; }
 function hex(h) { return [parseInt(h.substr(1, 2), 16), parseInt(h.substr(3, 2), 16), parseInt(h.substr(5, 2), 16)]; }
-function rgb(c, f, a) { return 'rgba(' + c.map(function (v) { return Math.max(0, Math.min(255, Math.round(v * f))); }).join(',') + ',' + (a == null ? 1 : a) + ')'; }
+function parseColor(c) { var m = String(c || '').match(/rgba?\(([^)]+)\)/); if (m) { var a = m[1].split(',').map(parseFloat); if (a.length < 4 || a[3] > 0.5) return [a[0], a[1], a[2]]; return null; } if (/^#[0-9a-f]{6}$/i.test(c)) return hex(c); return null; }
+function pageBg(el) { while (el && el.nodeType === 1) { var c = parseColor(getComputedStyle(el).backgroundColor); if (c) return c; el = el.parentElement; } return [255, 255, 255]; }
+function s2l(v) { v /= 255; return v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); }
+function l2s(v) { v = v <= 0 ? 0 : v >= 1 ? 1 : v; return Math.round(255 * (v <= 0.0031308 ? v * 12.92 : 1.055 * Math.pow(v, 1 / 2.4) - 0.055)); }
+function hash2(ix, iy, sd) { var h = Math.imul(ix, 374761393) + Math.imul(iy, 668265263) + Math.imul(sd, 1442695041); h = Math.imul(h ^ (h >>> 13), 1274126177); return ((h ^ (h >>> 16)) >>> 0) / 4294967295; }
+function vnoise(x, y, s, sd) { var X = x / s, Y = y / s, ix = Math.floor(X), iy = Math.floor(Y), fx = X - ix, fy = Y - iy; fx = fx * fx * (3 - 2 * fx); fy = fy * fy * (3 - 2 * fy);
+  var a = hash2(ix, iy, sd), b = hash2(ix + 1, iy, sd), c = hash2(ix, iy + 1, sd), d = hash2(ix + 1, iy + 1, sd); return (a + (b - a) * fx) + ((c + (d - c) * fx) - (a + (b - a) * fx)) * fy; }
 var WR_CACHE = {};
 function makeWrist(o) {
-  var key = [o.g, o.t, o.c, o.light ? 1 : 0].join('|'); if (WR_CACHE[key]) return WR_CACHE[key];
-  var W = 1600, H = 1000, PX = 9.46, cv = mk(W, H), g = cv.getContext('2d'), base = hex(TONES[o.t][0]), fem = o.g === 'f';
-  var ww = 0.343 * o.c * 10 * PX / 2, yc = H / 2, xw = 800;
+  var bgc = o.bg || [255, 255, 255], key = [o.g, o.t, o.c, bgc.join(',')].join('|'); if (WR_CACHE[key]) return WR_CACHE[key];
+  var PX = 11.4, W = 1200, H = 1200, cv = mk(W, H), g = cv.getContext('2d'), fem = o.g === 'f';
+  var ww = 0.343 * o.c * 10 * PX / 2, yc = H / 2, xw = W / 2;
   var KB = fem ? [[-90, 1.18], [-50, 1.1], [-20, 1.03], [0, 1], [16, 0.97], [28, 1.0], [45, 1.1], [65, 1.26], [90, 1.38]] : [[-90, 1.3], [-50, 1.18], [-20, 1.05], [0, 1], [16, 0.97], [28, 1.01], [45, 1.13], [65, 1.32], [90, 1.46]],
       KT = fem ? [[-90, 1.15], [-50, 1.08], [-20, 1.02], [0, 1], [9, 1.025], [22, 0.98], [40, 1.04], [65, 1.13], [90, 1.2]] : [[-90, 1.26], [-50, 1.15], [-20, 1.04], [0, 1], [9, 1.05], [22, 0.99], [40, 1.07], [65, 1.18], [90, 1.26]];
   function itp(K, x) { var m = (x - xw) / PX; if (m <= K[0][0]) return K[0][1] * ww; for (var i = 1; i < K.length; i++) if (m <= K[i][0]) { var a = K[i - 1], b = K[i], t = (m - a[0]) / (b[0] - a[0]), u = t * t * (3 - 2 * t); return (a[1] + (b[1] - a[1]) * u) * ww; } return K[K.length - 1][1] * ww; }
-  function ht(x) { return itp(KT, x); } function hb(x) { return itp(KB, x); }
-  var top = [], bot = []; for (var x = -40; x <= W + 40; x += 6) { top.push([x, yc - ht(x)]); bot.push([x, yc + hb(x)]); }
-  function path() { g.beginPath(); g.moveTo(top[0][0], top[0][1]); top.forEach(function (p) { g.lineTo(p[0], p[1]); }); for (var i = bot.length - 1; i >= 0; i--) g.lineTo(bot[i][0], bot[i][1]); g.closePath(); }
-  var bg = g.createRadialGradient(W * 0.55, H * 0.45, 80, W * 0.5, H * 0.5, W * 0.75);
-  if (o.light) { bg.addColorStop(0, '#f3f3f2'); bg.addColorStop(1, '#d4d5d6'); } else { bg.addColorStop(0, '#3a3f47'); bg.addColorStop(1, '#16191d'); }
-  g.fillStyle = bg; g.fillRect(0, 0, W, H);
-  g.save(); g.filter = 'blur(30px)'; g.translate(12, 36); path(); g.fillStyle = o.light ? 'rgba(0,0,0,.28)' : 'rgba(0,0,0,.55)'; g.fill(); g.restore();
-  g.save(); path(); g.clip();
-  for (var x2 = -40; x2 <= W + 40; x2 += 4) {
-    var y0 = yc - ht(x2), y1 = yc + hb(x2), gr = g.createLinearGradient(0, y0, 0, y1);
-    gr.addColorStop(0, rgb(base, 0.6)); gr.addColorStop(0.1, rgb(base, 0.84)); gr.addColorStop(0.3, rgb(base, 1.05)); gr.addColorStop(0.45, rgb(base, 1.07)); gr.addColorStop(0.7, rgb(base, 0.93)); gr.addColorStop(0.9, rgb(base, 0.74)); gr.addColorStop(1, rgb(base, 0.55));
-    g.fillStyle = gr; g.fillRect(x2, y0, 5, y1 - y0);
+  /* contorno por coluna, com leve ondulação orgânica */
+  var TOP = new Float32Array(W), BOT = new Float32Array(W);
+  for (var x = 0; x < W; x++) { var wob = (vnoise(x, 0, 140, 11) - 0.5) * 0.012 * ww; TOP[x] = yc - itp(KT, x) + wob; BOT[x] = yc + itp(KB, x) + wob * 0.6; }
+  /* fundo da página */
+  g.fillStyle = 'rgb(' + bgc.join(',') + ')'; g.fillRect(0, 0, W, H);
+  /* sombra do braço sobre a superfície (shadowBlur funciona em todos os navegadores, inclusive Safari) */
+  function armPath(dy) { g.beginPath(); g.moveTo(-60, TOP[0] + dy); for (var x2 = 0; x2 < W; x2 += 4) g.lineTo(x2, TOP[x2] + dy); g.lineTo(W + 60, TOP[W - 1] + dy); g.lineTo(W + 60, BOT[W - 1] + dy); for (x2 = W - 1; x2 >= 0; x2 -= 4) g.lineTo(x2, BOT[x2] + dy); g.lineTo(-60, BOT[0] + dy); g.closePath(); }
+  var lum = (bgc[0] * 0.3 + bgc[1] * 0.59 + bgc[2] * 0.11) / 255, sh = 0.55 + 0.45 * lum;
+  [[70, 0.16 * sh, 18, 46], [26, 0.2 * sh, 6, 18], [8, 0.22 * sh, 2, 7]].forEach(function (s) {
+    g.save(); g.shadowColor = 'rgba(0,0,0,' + s[1] + ')'; g.shadowBlur = s[0]; g.shadowOffsetX = s[2]; g.shadowOffsetY = s[3] + 4000; armPath(-4000); g.fillStyle = '#000'; g.fill(); g.restore();
+  });
+  /* pele, pixel a pixel */
+  /* a pele é lisa: calcula em meia resolução e suaviza na ampliação (4× mais rápido) */
+  var R = 0.5, SW = Math.round(W * R), SH = Math.round(H * R), sc = mk(SW, SH), sgc = sc.getContext('2d'), id = sgc.createImageData(SW, SH), d = id.data, base = hex(TONES[o.t][0]).map(s2l);
+  var dark = 1 - (0.299 * base[0] + 0.587 * base[1] + 0.114 * base[2]) / 0.6; /* 0 clara … ~1 escura */
+  var L = [-0.28, -0.8, 0.52], Ln = Math.hypot(L[0], L[1], L[2]); L = L.map(function (v) { return v / Ln; });
+  var Hh = [L[0], L[1], L[2] + 1], Hn = Math.hypot(Hh[0], Hh[1], Hh[2]); Hh = Hh.map(function (v) { return v / Hn; });
+  var bgl = bgc.map(s2l), mm = function (v) { return xw + v * PX; };
+  /* relevos: [x mm, v (-1 topo … 1 base), sx mm, sv, amplitude] */
+  var B = [[10, -0.55, 9, 0.32, fem ? 0.06 : 0.1], [-38, -0.15, 38, 0.6, 0.18]];
+  for (var ys = 0; ys < SH; ys++) {
+    var y = (ys + 0.5) / R;
+    for (var xs = 0; xs < SW; xs++) {
+      x = Math.min(W - 1, Math.floor((xs + 0.5) / R));
+      var t = TOP[x], b = BOT[x]; if (y < t - 2 || y > b + 2) continue;
+      var a = Math.min(y - t, b - y) * R + 0.5; a = a < 0 ? 0 : a > 1 ? 1 : a; if (a <= 0) continue;
+      var half = (b - t) / 2, mid = (b + t) / 2, v = (y - mid) / half; if (v < -0.999) v = -0.999; if (v > 0.999) v = 0.999;
+      var nz = Math.sqrt(1 - v * v), ny = v, nx = 0;
+      /* relevos (gradiente analítico das gaussianas) */
+      var xm = (x - xw) / PX, hx = 0, hv = 0;
+      for (var k = 0; k < B.length; k++) { var q = B[k], ex = (xm - q[0]) / q[2], ev = (v - q[1]) / q[3], e = q[4] * Math.exp(-0.5 * (ex * ex + ev * ev)); hx += -e * ex / q[2]; hv += -e * ev / q[3]; }
+      /* tendões do dorso da mão (a partir da prega, ~28 mm) */
+      if (xm > 24) { var gr = Math.min(1, (xm - 24) / 30) * (fem ? 0.05 : 0.08); for (k = 0; k < 4; k++) { var c0 = (-0.5 + k * 0.33) * (0.62 + (xm - 24) / 120), ev2 = (v - c0) / 0.11, e2 = gr * Math.exp(-0.5 * ev2 * ev2); hv += -e2 * ev2 / 0.11; } }
+      /* prega dorsal do pulso: leve vinco */
+      var ec = (xm - 28.5) / 1.2, ecr = -0.05 * Math.exp(-0.5 * ec * ec) * (1 - v * v); hx += -ecr * ec / 1.2;
+      nx -= hx * 0.08; ny -= hv * 0.35 * nz;
+      var nl = Math.hypot(nx, ny, nz); nx /= nl; ny /= nl; nz /= nl;
+      var dl = nx * L[0] + ny * L[1] + nz * L[2], dif = (dl + 0.32) / 1.32; if (dif < 0) dif = 0;
+      var dh = nx * Hh[0] + ny * Hh[1] + nz * Hh[2], spec = dh > 0 ? 0.055 * Math.pow(dh, 22) + 0.03 * Math.pow(dh, 5) : 0;
+      spec *= (1 - 0.55 * dark) * (fem ? 1.1 : 1);
+      var rim = Math.pow(1 - nz, 3) * 0.06;
+      /* textura: manchas suaves, rubor, poros */
+      var n1 = vnoise(x, y, 180, 3) - 0.5, n2 = vnoise(x, y, 38, 5) - 0.5, n3 = vnoise(x, y, 7, 7) - 0.5, n4 = hash2(x, y, 9) - 0.5;
+      var tex = 1 + n1 * 0.07 + n2 * 0.045 + n3 * (fem ? 0.02 : 0.035) + n4 * 0.018;
+      var red = n1 * 0.05 + (xm > 30 ? Math.min(0.05, (xm - 30) / 900) : 0);
+      var ar = base[0] * tex * (1 + red), ag = base[1] * tex * (1 - red * 0.6), ab = base[2] * tex * (1 - red * 0.4);
+      /* subsuperfície: sombras puxam para o vermelho */
+      var ss = (1 - dif); ss = ss * ss * 0.8;
+      var tr = 1 - ss * 0.05, tg = 1 - ss * 0.32, tb = 1 - ss * 0.42;
+      var nzc = Math.sqrt(1 - v * v), edge = 0.5 + 0.5 * Math.pow(nzc, 0.75), amb = 0.2, lit = (amb + dif * 1.0) * edge, bounce = ny > 0 ? ny * ny * 0.05 : 0;
+      var r = ar * (lit * tr) + spec + rim + bgl[0] * bounce * ar, gg2 = ag * (lit * tg) + spec + rim + bgl[1] * bounce * ag, bb = ab * (lit * tb) + spec * 1.02 + rim + bgl[2] * bounce * ab;
+      var i4 = (ys * SW + xs) * 4;
+      d[i4] = l2s(r); d[i4 + 1] = l2s(gg2); d[i4 + 2] = l2s(bb); d[i4 + 3] = Math.round(a * 255);
+    }
   }
-  function blob(cx, cy, rx, ry, f, a) { g.save(); g.translate(cx, cy); g.scale(1, ry / rx); var q = g.createRadialGradient(0, 0, 1, 0, 0, rx); q.addColorStop(0, rgb(base, f, a)); q.addColorStop(1, rgb(base, f, 0)); g.fillStyle = q; g.beginPath(); g.arc(0, 0, rx, 0, 7); g.fill(); g.restore(); }
-  var X = function (mm) { return xw + mm * PX; };
-  blob(X(9), yc - ht(X(9)) * 0.78, ww * (fem ? 0.2 : 0.26), ww * 0.16, 1.13, fem ? 0.35 : 0.5); blob(X(9) + ww * 0.05, yc - ht(X(9)) * 0.93, ww * 0.2, ww * 0.08, 0.72, 0.35);
-  blob(X(17), yc + hb(X(17)) * 0.8, ww * 0.2, ww * 0.12, 1.08, 0.3);
-  g.lineCap = 'round';
-  for (var k = 0; k < 4; k++) {
-    var f0 = -0.55 + k * 0.36; g.strokeStyle = rgb(base, 1.08, fem ? 0.06 : 0.1); g.lineWidth = ww * 0.1; g.filter = 'blur(5px)'; g.beginPath(); g.moveTo(X(26), yc + f0 * ww * 0.55); g.quadraticCurveTo(X(55), yc + f0 * ww * 0.85, X(95), yc + f0 * ww * 1.15); g.stroke();
-    g.strokeStyle = rgb(base, 0.86, fem ? 0.05 : 0.08); g.lineWidth = ww * 0.05; g.beginPath(); g.moveTo(X(30), yc + (f0 + 0.17) * ww * 0.6); g.quadraticCurveTo(X(58), yc + (f0 + 0.17) * ww * 0.9, X(95), yc + (f0 + 0.17) * ww * 1.15); g.stroke(); g.filter = 'none';
-  }
-  g.strokeStyle = rgb(base, 0.8, 0.12); g.lineWidth = 3; g.filter = 'blur(2px)'; g.beginPath(); g.moveTo(X(27), yc - ht(X(27)) * 0.9); g.quadraticCurveTo(X(29), yc, X(27), yc + hb(X(27)) * 0.9); g.stroke(); g.filter = 'none';
-  g.strokeStyle = 'rgba(60,70,110,' + (fem ? 0.05 : 0.09) + ')'; g.lineWidth = ww * 0.045; g.filter = 'blur(3px)'; g.beginPath(); g.moveTo(X(-90), yc - ww * 0.35); g.bezierCurveTo(X(-40), yc - ww * 0.45, X(10), yc - ww * 0.25, X(40), yc - ww * 0.5); g.quadraticCurveTo(X(60), yc - ww * 0.62, X(92), yc - ww * 0.55); g.stroke();
-  g.beginPath(); g.moveTo(X(-90), yc + ww * 0.5); g.bezierCurveTo(X(-50), yc + ww * 0.35, X(-10), yc + ww * 0.55, X(35), yc + ww * 0.2); g.quadraticCurveTo(X(60), yc + ww * 0.05, X(92), yc + ww * 0.15); g.stroke(); g.filter = 'none';
-  var seed = 7; function rnd() { seed = (seed * 16807) % 2147483647; return seed / 2147483647; }
-  var nh = fem ? 90 : 1300; g.lineWidth = 1.2;
-  for (var q2 = 0; q2 < nh; q2++) { var hx = X(-92) + rnd() * (fem ? 120 : 125) * PX, a0 = yc - ht(hx), a1 = yc + hb(hx), hy = a0 + rnd() * (a1 - a0) * 0.85, len = (fem ? 5 : 9) + rnd() * (fem ? 5 : 15), an = -0.3 + rnd() * 0.45 + (hy < yc ? -0.15 : 0.15); g.strokeStyle = rgb(base, 0.34, fem ? 0.08 : 0.12 + rnd() * 0.14); g.beginPath(); g.moveTo(hx, hy); g.lineTo(hx + Math.cos(an) * len, hy + Math.sin(an) * len); g.stroke(); }
-  var idd = g.getImageData(0, 0, W, H), d = idd.data; for (var j = 0; j < d.length; j += 4) { var e = (rnd() - 0.5) * 6; d[j] += e; d[j + 1] += e * 0.95; d[j + 2] += e * 0.9; } g.putImageData(idd, 0, 0);
-  g.restore();
-  g.save(); path(); g.strokeStyle = 'rgba(0,0,0,.22)'; g.lineWidth = 2; g.stroke(); g.restore();
+  sgc.putImageData(id, 0, 0); g.imageSmoothingEnabled = true; g.imageSmoothingQuality = 'high'; g.drawImage(sc, 0, 0, W, H);
   return (WR_CACHE[key] = { cv: cv, cx: xw, cy: yc, pxmm: PX, wmm: 0.343 * o.c * 10, ww: ww });
 }
 /* pulseira contornando o pulso: caixa e alças planas, depois a pulseira segue a seção elíptica do pulso e escurece até a borda */
@@ -491,21 +526,44 @@ function fitOf(P, C) {
 
 /* ================= estilos ================= */
 var CSS = [
-'.ipz{--ip-ink:#333;--ip-txt:#515151;--ip-mut:#8a8a8a;--ip-line:#e2e2e2;--ip-soft:#f4f4f4;--ip-acc:#1f5a78;font-family:"Open Sans",Arial,Helvetica,sans-serif;color:var(--ip-txt);box-sizing:border-box;clear:both}',
+'.ipz{--ip-ink:#211e1f;--ip-txt:#515151;--ip-mut:#8d8a8b;--ip-line:#e4e3e3;--ip-soft:#efefef;--ip-acc:#211e1f;--ip-bg:#fff;font-family:inherit;color:var(--ip-txt);box-sizing:border-box;clear:both}',
 '.ipz *,.ipz *:before,.ipz *:after{box-sizing:border-box}',
 ':where(.ipz) button{font:inherit;cursor:pointer;text-shadow:none;box-shadow:none}',
 '.ipz input[type=range]{height:auto;padding:0;border:0;box-shadow:none;background:transparent;display:block}',
 '.ipz .ipz-num{height:auto;margin:0;display:inline-block;border-radius:0;box-shadow:none;color:var(--ip-ink);background:#fff}',
 '.ipz [hidden]{display:none!important}',
-'.ipz-stage{position:relative;overflow:hidden;background:var(--ip-soft);touch-action:pan-y;-webkit-user-select:none;user-select:none}',
+'.ipz-stage{position:relative;overflow:hidden;background:var(--ip-bg);touch-action:pan-y;-webkit-user-select:none;user-select:none}',
 '.ipz-stage canvas{display:block;width:100%;height:auto}',
 '.ipz-stage.ipz-tap canvas{cursor:crosshair;touch-action:none}.ipz-stage.ipz-drag canvas{cursor:grab;touch-action:none}',
-'.ipz-load{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:13px;letter-spacing:.5px;color:var(--ip-mut);background:var(--ip-soft);text-transform:uppercase}',
-'.ipz-cap{position:absolute;left:0;right:0;bottom:0;padding:8px 12px;font-size:12px;line-height:1.35;color:#fff;background:linear-gradient(transparent,rgba(0,0,0,.6));pointer-events:none}',
-'.ipz-tones{display:inline-flex;gap:8px;flex-wrap:wrap;vertical-align:middle}',
-'.ipz-tone{width:22px;height:22px;border-radius:50%;border:1px solid rgba(0,0,0,.18);padding:0}',
-'.ipz-tone[aria-checked="true"]{outline:2px solid var(--ip-ink);outline-offset:2px}',
-'.ipz input[type=range]{width:100%;accent-color:var(--ip-ink);margin:6px 0 2px}',
+'.ipz-load{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:11px;letter-spacing:2px;color:var(--ip-mut);background:var(--ip-bg);text-transform:uppercase}',
+'.ipz-load:after{content:"";width:24px;height:1px;background:currentColor;margin-left:12px;animation:ipzp 1.4s ease-in-out infinite}',
+'@keyframes ipzp{0%,100%{opacity:.2;transform:scaleX(.3)}50%{opacity:1;transform:scaleX(1)}}',
+'@media (prefers-reduced-motion:reduce){.ipz-load:after{animation:none}}',
+'.ipz-cap{position:absolute;left:12px;bottom:12px;padding:5px 10px;font-size:10.5px;letter-spacing:1.2px;text-transform:uppercase;line-height:1.35;color:#fff;background:rgba(33,30,31,.72);pointer-events:none}',
+'.ipz-tones{display:flex;gap:12px;flex-wrap:wrap;align-items:center}',
+'.ipz .ipz-tone{width:26px;height:26px;border-radius:50%;border:0;padding:0;box-shadow:inset 0 0 0 1px rgba(0,0,0,.1);transition:box-shadow .15s,transform .15s}',
+'.ipz .ipz-tone:hover{transform:scale(1.08)}',
+'.ipz .ipz-tone[aria-checked="true"]{box-shadow:inset 0 0 0 1px rgba(0,0,0,.1),0 0 0 3px var(--ip-bg),0 0 0 4px var(--ip-ink)}',
+'.ipz input[type=range]{-webkit-appearance:none;appearance:none;width:100%;height:22px;margin:2px 0 0;background:transparent;cursor:pointer;--p:50%}',
+'.ipz input[type=range]::-webkit-slider-runnable-track{height:2px;background:linear-gradient(var(--ip-ink),var(--ip-ink)) 0/var(--p) 100% no-repeat,var(--ip-line);border:0}',
+'.ipz input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:18px;height:18px;border-radius:50%;background:var(--ip-bg);border:1.5px solid var(--ip-ink);margin-top:-8px;box-shadow:0 1px 4px rgba(0,0,0,.12);transition:transform .15s}',
+'.ipz input[type=range]:active::-webkit-slider-thumb{transform:scale(1.15)}',
+'.ipz input[type=range]::-moz-range-track{height:2px;background:var(--ip-line);border:0}',
+'.ipz input[type=range]::-moz-range-progress{height:2px;background:var(--ip-ink)}',
+'.ipz input[type=range]::-moz-range-thumb{width:16px;height:16px;border-radius:50%;background:var(--ip-bg);border:1.5px solid var(--ip-ink);box-shadow:0 1px 4px rgba(0,0,0,.12)}',
+'.ipz-scale{display:flex;justify-content:space-between;font-size:10.5px;color:var(--ip-mut);letter-spacing:.5px;margin-top:2px}',
+'.ipz-field{display:flex;flex-direction:column;gap:8px}',
+'.ipz .ipz-lab{font-size:10.5px;letter-spacing:1.6px;text-transform:uppercase;color:var(--ip-mut);display:flex;justify-content:space-between;align-items:baseline;gap:8px}',
+'.ipz .ipz-lab b{color:var(--ip-ink);font-weight:600;letter-spacing:1px}',
+'.ipz-opt{display:inline-flex;border:1px solid var(--ip-ink);align-self:flex-start}',
+'.ipz .ipz-opt button{border:0;background:transparent;color:var(--ip-ink);padding:8px 16px;font-size:11px;letter-spacing:1.4px;text-transform:uppercase;font-weight:600;transition:background .15s,color .15s}',
+'.ipz .ipz-opt button+button{border-left:1px solid var(--ip-ink)}',
+'.ipz .ipz-opt button[aria-pressed="true"]{background:var(--ip-ink);color:#fff}',
+'.ipz-acts{display:flex;flex-wrap:wrap;gap:10px}',
+'.ipz .ipz-act{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--ip-ink);background:transparent;color:var(--ip-ink);padding:11px 16px;font-size:11px;letter-spacing:1.4px;text-transform:uppercase;font-weight:600;transition:background .15s,color .15s}',
+'.ipz .ipz-act:hover,.ipz .ipz-act[aria-pressed="true"]{background:var(--ip-ink);color:#fff}',
+'.ipz .ipz-act svg{width:15px;height:15px;flex:0 0 15px}',
+'@media (max-width:767px){.ipz-acts .ipz-act{flex:1 1 100%;justify-content:center}.ipz-opt{align-self:stretch}.ipz .ipz-opt button{flex:1}}',
 '.ipz .ipz-link{background:none;border:0;padding:0;color:var(--ip-ink);font-size:12px;letter-spacing:1px;text-transform:uppercase;font-weight:600;border-bottom:1px solid currentColor;line-height:1.6}',
 '.ipz .ipz-link[aria-pressed="true"]{color:var(--ip-acc)}',
 '.ipz-link:focus-visible,.ipz-tone:focus-visible,.ipz-btn:focus-visible,.ipz-seg button:focus-visible,.ipz input:focus-visible{outline:2px solid var(--ip-acc);outline-offset:2px}',
@@ -522,7 +580,7 @@ var CSS = [
 '.ipz-min h2 b{font-weight:600}',
 '.ipz-min h3{font-size:20px;line-height:32px;font-weight:300;text-transform:uppercase;color:var(--ip-txt);margin:0 0 14px}',
 '.ipz-min p{font-size:13px;line-height:22px;letter-spacing:.5px;font-weight:400;margin:0 0 18px;color:var(--ip-txt)}',
-'.ipz-min .ipz-ctl{border-top:1px solid var(--ip-line);padding-top:16px;display:flex;flex-direction:column;gap:14px;max-width:420px}',
+'.ipz-min .ipz-ctl{border-top:1px solid var(--ip-line);padding-top:22px;display:flex;flex-direction:column;gap:22px;max-width:430px}',
 '.ipz-min .ipz-lab{font-size:11px;letter-spacing:1.2px;text-transform:uppercase;color:var(--ip-mut);display:flex;justify-content:space-between;gap:8px}',
 '.ipz-min .ipz-lab b{color:var(--ip-ink);font-weight:600}',
 '.ipz-min .ipz-line{display:flex;flex-wrap:wrap;align-items:center;gap:10px 18px}',
@@ -531,8 +589,8 @@ var CSS = [
 '.ipz-min .ipz-foot{font-size:11px;color:var(--ip-mut);letter-spacing:.3px;line-height:1.5}',
 '@media (max-width:767px){.ipz-min .ipz-row{display:block}.ipz-min .ipz-col{width:100%}.ipz-min .ipz-text{padding:20px 0 0;width:90%;margin:auto}.ipz-min h2{font-size:26px;line-height:36px}.ipz-min h3{font-size:16px;line-height:26px}}',
 /* completo */
-'.ipz-full{margin:30px auto;max-width:1140px;border:1px solid var(--ip-line);background:#fff;display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,1fr)}',
-'.ipz-full .ipz-stage{background:#16191d;display:flex;align-items:center;justify-content:center;min-height:100%}.ipz-full .ipz-stage canvas{max-height:100%}',
+'.ipz-full{margin:30px auto;max-width:1140px;border:1px solid var(--ip-line);background:var(--ip-bg);display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,1fr)}',
+'.ipz-full .ipz-stage{background:var(--ip-bg);display:flex;align-items:center;justify-content:center;min-height:100%}.ipz-full .ipz-stage canvas{max-height:100%}',
 '.ipz-full .ipz-side{padding:26px 28px;display:flex;flex-direction:column;gap:16px;min-width:0}',
 '.ipz-full .ipz-kick{font-size:11px;letter-spacing:2px;text-transform:uppercase;color:var(--ip-mut)}',
 '.ipz-full h2{font-size:28px;line-height:1.2;font-weight:300;text-transform:uppercase;color:var(--ip-ink);margin:2px 0 0}.ipz-full h2 b{font-weight:600}',
@@ -559,22 +617,25 @@ function Widget(host, estilo, P) {
   var self = this, min = estilo === 'minimal', st = lsGet();
   var S = this.S = { g: st.g === 'f' ? 'f' : 'm', t: st.t != null ? clamp(+st.t, 0, 5) : 2, c: num(st.c) || 17.5, mode: 'fk', night: false, mins: 0, col: P.bgw9 ? 'bgw9' : 'c3' };
   var F = this.F = { img: null, pts: [], refmm: num(st.refmm) || 40, q: 1, phi: 0, ell: false, rot: 0, dx: 0, dy: 0, cal: false, manual: false, view: null };
-  var C = null, OW = min ? 1000 : 940, OH = 1000;
+  var C = null, OW = 1200, OH = 1200, BG = pageBg(host.parentElement || host);
+  host.style.setProperty('--ip-bg', 'rgb(' + BG.join(',') + ')');
   host.classList.add('ipz', min ? 'ipz-min' : 'ipz-full');
   host.setAttribute('aria-label', 'Simulador do relógio no pulso');
   var nm = P.name || 'este relógio';
-  var tonesHtml = TONES.map(function (t, i) { return '<button type="button" class="ipz-tone" role="radio" aria-label="Tom de pele: ' + t[1] + '" title="' + t[1] + '" data-t="' + i + '" style="background:' + t[0] + '"></button>'; }).join('');
+  var tonesHtml = TONES.map(function (t, i) { return '<button type="button" class="ipz-tone" role="radio" aria-label="Tom de pele: ' + t[1] + '" title="' + t[1] + '" data-t="' + i + '" style="background:' + toneBg(t[0]) + '"></button>'; }).join('');
   var fileInputs = '<input type="file" accept="image/*,.heic,.heif" class="ipz-vh" data-r="pick"><input type="file" accept="image/*" capture="environment" class="ipz-vh" data-r="cam">';
   if (min) {
     host.innerHTML =
       '<div class="ipz-row"><div class="ipz-col"><div class="ipz-stage"><canvas data-r="cv" role="img" aria-label="' + esc(nm) + ' no pulso, em tamanho real"></canvas><div class="ipz-load" data-r="load">Montando no pulso…</div><div class="ipz-cap" data-r="cap" hidden></div></div></div>' +
       '<div class="ipz-col ipz-text"><h2><b>' + esc(CFG.titulo) + '</b></h2><h3 data-r="h3"></h3><p data-r="fitp"></p>' +
       '<div class="ipz-ctl">' +
-        '<div data-r="pfk"><div class="ipz-lab"><span>Circunferência do pulso</span><b data-r="co"></b></div><input type="range" min="13" max="22" step="0.5" data-r="c" aria-label="Circunferência do pulso em centímetros">' +
-        '<div class="ipz-line" style="margin-top:10px"><span class="ipz-tones" role="radiogroup" aria-label="Tom de pele" data-r="tones">' + tonesHtml + '</span><span class="ipz-gen"><button type="button" class="ipz-link" data-g="m">Masculino</button><button type="button" class="ipz-link" data-g="f">Feminino</button></span></div></div>' +
+        '<div data-r="pfk" class="ipz-field" style="gap:22px">' +
+          '<div class="ipz-field"><div class="ipz-lab"><span>Circunferência do pulso</span><b data-r="co"></b></div><input type="range" min="13" max="22" step="0.5" data-r="c" aria-label="Circunferência do pulso em centímetros"><div class="ipz-scale"><span>13 cm</span><span>Meça logo abaixo do osso do pulso</span><span>22 cm</span></div></div>' +
+          '<div class="ipz-field"><div class="ipz-lab"><span>Tom de pele</span><b data-r="tn"></b></div><span class="ipz-tones" role="radiogroup" aria-label="Tom de pele" data-r="tones">' + tonesHtml + '</span></div>' +
+          '<div class="ipz-opt" role="group" aria-label="Pulso"><button type="button" data-g="m">Masculino</button><button type="button" data-g="f">Feminino</button></div></div>' +
         '<div data-r="pfoto" hidden><p class="ipz-msg" data-r="msg" style="margin:0"></p><div class="ipz-line" style="margin-top:10px"><button type="button" class="ipz-link" data-a="pick">Escolher foto</button><button type="button" class="ipz-link" data-a="cam">Tirar foto</button><button type="button" class="ipz-link" data-a="remark" hidden>Marcar de novo</button></div>' +
         '<div class="ipz-lab" style="margin-top:12px"><span>Diâmetro do relógio da foto</span><span><input type="number" class="ipz-num" min="20" max="60" step="0.5" data-r="refmm" aria-label="Diâmetro em milímetros do relógio que aparece na foto"> mm</span></div></div>' +
-        '<div class="ipz-line"><button type="button" class="ipz-link" data-a="night" aria-pressed="false" hidden>☾ Ver no escuro</button><button type="button" class="ipz-link" data-a="mode" aria-pressed="false">Ver na foto do meu pulso</button></div>' +
+        '<div class="ipz-acts"><button type="button" class="ipz-act" data-a="night" aria-pressed="false" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5Z"/></svg><span>Ver no escuro</span></button><button type="button" class="ipz-act" data-a="mode" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 8h3l2-2.5h6L17 8h3v11H4z"/><circle cx="12" cy="13" r="3.6"/></svg><span>Ver na foto do meu pulso</span></button></div>' +
         '<div class="ipz-foot">Simulação em tamanho real a partir da foto e das medidas do produto. Sua foto não sai do seu aparelho.</div>' +
       '</div>' + fileInputs + '</div></div>';
   } else {
@@ -586,8 +647,8 @@ function Widget(host, estilo, P) {
       '<dl class="ipz-specs" data-r="specs"></dl>' +
       '<div class="ipz-seg" role="group" aria-label="Tipo de pulso"><button type="button" data-a="fk" aria-pressed="true">Pulso ilustrado</button><button type="button" data-a="foto" aria-pressed="false">Foto do meu pulso</button></div>' +
       '<div class="ipz-grp" data-r="pfk"><div class="ipz-lab"><span>Circunferência do pulso</span><b data-r="co"></b></div><input type="range" min="13" max="22" step="0.5" data-r="c" aria-label="Circunferência do pulso em centímetros">' +
-        '<div class="ipz-lab"><span>Tom de pele</span></div><span class="ipz-tones" role="radiogroup" aria-label="Tom de pele" data-r="tones">' + tonesHtml + '</span>' +
-        '<div class="ipz-seg" role="group" aria-label="Pulso"><button type="button" data-g="m">Masculino</button><button type="button" data-g="f">Feminino</button></div>' +
+        '<div class="ipz-lab"><span>Tom de pele</span><b data-r="tn"></b></div><span class="ipz-tones" role="radiogroup" aria-label="Tom de pele" data-r="tones">' + tonesHtml + '</span>' +
+        '<div class="ipz-opt" role="group" aria-label="Pulso"><button type="button" data-g="m">Masculino</button><button type="button" data-g="f">Feminino</button></div>' +
         '<p class="ipz-note">Não sabe a medida? Passe uma fita métrica (ou um barbante) logo abaixo do osso do pulso.</p></div>' +
       '<div class="ipz-grp" data-r="pfoto" hidden><div class="ipz-row2"><button type="button" class="ipz-btn ipz-pri" data-a="pick">Escolher foto</button><button type="button" class="ipz-btn" data-a="cam">Tirar foto</button><button type="button" class="ipz-btn" data-a="remark" hidden>Marcar de novo</button></div>' +
         '<p class="ipz-msg" data-r="msg"></p>' +
@@ -606,7 +667,8 @@ function Widget(host, estilo, P) {
 
   function ui() {
     var fit = fitOf(P, S.c);
-    $('co').textContent = fmt(S.c, 1) + ' cm'; $('c').value = S.c;
+    $('co').textContent = fmt(S.c, 1) + ' cm'; $('c').value = S.c; if ($('tn')) $('tn').textContent = TONES[S.t][1];
+    host.querySelectorAll('input[type=range]').forEach(function (r) { r.style.setProperty('--p', ((r.value - r.min) / (r.max - r.min) * 100) + '%'); });
     host.querySelectorAll('.ipz-tone').forEach(function (b) { b.setAttribute('aria-checked', +b.dataset.t === S.t ? 'true' : 'false'); });
     host.querySelectorAll('[data-g]').forEach(function (b) { b.setAttribute('aria-pressed', b.dataset.g === S.g ? 'true' : 'false'); });
     $('pfk').hidden = S.mode !== 'fk'; $('pfoto').hidden = S.mode !== 'foto';
@@ -615,8 +677,8 @@ function Widget(host, estilo, P) {
     if (min) {
       $('h3').textContent = fmt(P.diam, 1) + ' mm' + (S.mode === 'fk' ? ' · pulso de ' + fmt(S.c, 1) + ' cm' : ' · na sua foto');
       $('fitp').textContent = fit ? 'Com ' + fmt(P.diam, 1) + ' mm de diâmetro' + (P.l2l ? ' e ' + fmt(P.l2l, 1) + ' mm de uma alça à outra' : '') + ', o ' + nm + ' ' + fit.s : '';
-      var mb = host.querySelector('[data-a="mode"]'); mb.textContent = S.mode === 'fk' ? 'Ver na foto do meu pulso' : 'Voltar ao pulso ilustrado'; mb.setAttribute('aria-pressed', S.mode === 'foto' ? 'true' : 'false');
-      var nb = host.querySelector('[data-a="night"]'); nb.hidden = !P.lume; nb.setAttribute('aria-pressed', S.night ? 'true' : 'false'); nb.textContent = S.night ? '☀ Ver de dia' : (P.led && !P.lume ? '💡 Acender a luz' : '☾ Ver no escuro');
+      var mb = host.querySelector('[data-a="mode"]'); mb.querySelector('span').textContent = S.mode === 'fk' ? 'Ver na foto do meu pulso' : 'Voltar ao pulso ilustrado'; mb.setAttribute('aria-pressed', S.mode === 'foto' ? 'true' : 'false');
+      var nb = host.querySelector('[data-a="night"]'); nb.hidden = !P.lume; nb.setAttribute('aria-pressed', S.night ? 'true' : 'false'); nb.querySelector('span').textContent = S.night ? 'Ver de dia' : (P.led && !P.lume ? 'Acender a luz' : 'Ver no escuro');
     } else {
       var fb = $('fit'); if (fit) { fb.hidden = false; fb.querySelector('i').style.background = fit.c; fb.querySelector('b').textContent = fit.t + ' num pulso de ' + fmt(S.c, 1) + ' cm'; fb.querySelector('small').textContent = fit.tip; } else fb.hidden = true;
       $('specs').innerHTML = [['Diâmetro', P.diam], ['Lug to lug', P.l2l], ['Espessura', P.esp]].map(function (x) { return '<div><dt>' + x[0] + '</dt><dd>' + (x[1] ? fmt(x[1], 1) + ' mm' : '—') + '</dd></div>'; }).join('');
@@ -649,18 +711,21 @@ function Widget(host, estilo, P) {
     var g = cv.getContext('2d');
     if (S.mode === 'fk') {
       stage.classList.remove('ipz-tap', 'ipz-drag');
-      var r = makeWrist({ g: S.g, t: S.t, c: S.c, light: min }); cv.width = OW; cv.height = OH;
+      var r = makeWrist({ g: S.g, t: S.t, c: S.c, bg: BG }); cv.width = OW; cv.height = OH;
       g.drawImage(r.cv, r.cx - OW / 2, r.cy - OH / 2, OW, OH, 0, 0, OW, OH);
       var scale = (P.diam / 2 * r.pxmm) / C.r;
       var place = function (q) { q.translate(OW / 2, OH / 2); };
-      g.save(); place(g); g.shadowColor = min ? 'rgba(0,0,0,.35)' : 'rgba(0,0,0,.45)'; g.shadowBlur = 14; g.shadowOffsetX = -4; g.shadowOffsetY = 6; drawWrapped(g, C, scale, r.ww); g.restore();
+      var WL = mk(OW, OH), wg = WL.getContext('2d'); wg.save(); place(wg); drawWrapped(wg, C, scale, r.ww); wg.restore();
+      /* sombra do relógio sobre a pele: uma larga e suave, outra curta de contato */
+      g.save(); g.shadowColor = 'rgba(40,20,10,.30)'; g.shadowBlur = 34; g.shadowOffsetX = 6; g.shadowOffsetY = 16; g.drawImage(WL, 0, 0); g.restore();
+      g.save(); g.shadowColor = 'rgba(30,15,8,.42)'; g.shadowBlur = 7; g.shadowOffsetX = 1; g.shadowOffsetY = 4; g.drawImage(WL, 0, 0); g.restore();
       if (S.night) { if (!lumeLayer(g, place, scale)) cap('Este modelo não tem partes luminosas detectáveis na foto.'); else cap(P.led ? 'Luz acesa' : '☾ ' + S.mins + ' min no escuro'); }
       else cap('');
       return;
     }
     /* foto do cliente */
     if (!F.img) {
-      cv.width = OW; cv.height = Math.round(OW * 0.75); g.fillStyle = '#ececec'; g.fillRect(0, 0, cv.width, cv.height);
+      cv.width = OW; cv.height = Math.round(OW * 0.75); g.fillStyle = 'rgb(' + BG.map(function (v) { return Math.round(v * 0.95); }).join(',') + ')'; g.fillRect(0, 0, cv.width, cv.height);
       g.fillStyle = '#777'; g.textAlign = 'center'; g.font = '600 26px "Open Sans",Arial,sans-serif'; g.fillText('Escolha uma foto do seu pulso', cv.width / 2, cv.height / 2 - 8);
       g.font = '20px "Open Sans",Arial,sans-serif'; g.fillText('de preferência usando um relógio de tamanho conhecido', cv.width / 2, cv.height / 2 + 26);
       stage.classList.remove('ipz-drag'); stage.classList.add('ipz-tap'); cap(''); return;
@@ -833,6 +898,6 @@ function mount(el, o) {
   el.innerHTML = ''; el.className = ''; el.hidden = false;
   var W = new Widget(el, o.estilo === 'minimal' || o.estilo === 'minimalista' ? 'minimal' : 'completo', P); W.start(); return W;
 }
-window.ImpalaPulso = { boot: boot, mount: mount, readProduct: readProduct, makeCut: makeCut, version: VERSION };
+window.ImpalaPulso = { boot: boot, mount: mount, _wrist: makeWrist, readProduct: readProduct, makeCut: makeCut, version: VERSION };
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else boot();
 })();
