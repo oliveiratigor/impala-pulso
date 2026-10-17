@@ -1,4 +1,4 @@
-/*! Impala · No seu pulso — v1.4.0
+/*! Impala · No seu pulso — v1.4.1
  * Simulador "relógio no pulso" para a página de produto da Loja Integrada.
  * Lê a primeira imagem do cadastro e as medidas da descrição (Diâmetro, Lug to Lug, Espessura),
  * recorta o relógio da foto e o monta em tamanho real num pulso ilustrado ou numa foto do pulso do cliente.
@@ -9,7 +9,7 @@
 'use strict';
 if (window.__IMPALA_PULSO__) return; window.__IMPALA_PULSO__ = true;
 
-var VERSION = '1.4.0';
+var VERSION = '1.4.1';
 var SCRIPT = document.currentScript;
 var CFG = { estilo: 'completo', alvo: '', posicao: 'auto', titulo: 'No seu pulso', escuro: false, foto: false, guia: '', debug: /[?&]pulso=debug\b/.test(location.search) };
 try { Object.assign(CFG, window.IMPALA_PULSO || {}); } catch (e) {}
@@ -561,6 +561,8 @@ var CSS = [
 '.ipz [hidden]{display:none!important}',
 '.ipz-stage{position:relative;overflow:hidden;background:var(--ip-bg);touch-action:pan-y;-webkit-user-select:none;user-select:none}',
 '.ipz-stage canvas{display:block;width:100%;height:auto}',
+'.ipz-stage.ipz-sq{aspect-ratio:1/1}.ipz-stage.ipz-sq canvas[data-r=cv]{position:absolute;inset:0;width:100%;height:100%;object-fit:contain}',
+'.ipz [data-r=fitp]{min-height:66px}.ipz [data-r=h3]{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
 '.ipz-stage.ipz-tap canvas{cursor:crosshair;touch-action:none}.ipz-stage.ipz-drag canvas{cursor:grab;touch-action:none}',
 '.ipz-load{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:11px;letter-spacing:2px;color:var(--ip-mut);background:var(--ip-bg);text-transform:uppercase}',
 '.ipz-load:after{content:"";width:24px;height:1px;background:currentColor;margin-left:12px;animation:ipzp 1.4s ease-in-out infinite}',
@@ -685,7 +687,7 @@ function Widget(host, estilo, P) {
   if (min) {
     var tw = String(CFG.titulo).split(' '), tt = tw.length > 1 ? '<b>' + esc(tw.slice(0, -1).join(' ')) + '</b> ' + esc(tw[tw.length - 1]) : '<b>' + esc(CFG.titulo) + '</b>';
     host.innerHTML =
-      '<div class="ipz-row"><div class="ipz-col"><div class="ipz-stage"><canvas data-r="cv" role="img" aria-label="' + esc(nm) + ' no pulso, em tamanho real"></canvas><canvas class="ipz-ghost" data-r="ghost" aria-hidden="true"></canvas><div class="ipz-load" data-r="load">Montando no pulso</div><div class="ipz-cap" data-r="cap" hidden></div></div></div>' +
+      '<div class="ipz-row"><div class="ipz-col"><div class="ipz-stage ipz-sq"><canvas data-r="cv" role="img" aria-label="' + esc(nm) + ' no pulso, em tamanho real"></canvas><canvas class="ipz-ghost" data-r="ghost" aria-hidden="true"></canvas><div class="ipz-load" data-r="load">Montando no pulso</div><div class="ipz-cap" data-r="cap" hidden></div></div></div>' +
       '<div class="ipz-col ipz-text"><div class="ipz-eye">Provador virtual</div><h2>' + tt + '</h2><h3 data-r="h3"></h3><p data-r="fitp"></p>' +
       '<div class="ipz-meter" data-r="meter"><div class="ipz-mpct"><span>Ocupa do seu pulso</span><b data-r="mpct"></b></div><div class="ipz-mtrack" aria-hidden="true"><i class="ipz-mz1"></i><i class="ipz-mz2"></i><i class="ipz-mz3"></i><span class="ipz-medge"></span><span class="ipz-mdot" data-r="mdot"></span></div><div class="ipz-mlab" aria-hidden="true"><span data-z="0">Discreto</span><span data-z="1">Ideal</span><span data-z="2">Grande</span></div><button type="button" class="ipz-dims" data-a="dims" aria-pressed="false">Ver as medidas no pulso</button></div>' +
       '<div class="ipz-ctl">' +
@@ -701,7 +703,7 @@ function Widget(host, estilo, P) {
       '</div>' + fileInputs + '</div></div>';
   } else {
     host.innerHTML =
-      '<div class="ipz-stage"><canvas data-r="cv" role="img" aria-label="' + esc(nm) + ' no pulso, em tamanho real"></canvas><div class="ipz-load" data-r="load">Montando no pulso…</div><div class="ipz-cap" data-r="cap" hidden></div></div>' +
+      '<div class="ipz-stage ipz-sq"><canvas data-r="cv" role="img" aria-label="' + esc(nm) + ' no pulso, em tamanho real"></canvas><div class="ipz-load" data-r="load">Montando no pulso…</div><div class="ipz-cap" data-r="cap" hidden></div></div>' +
       '<div class="ipz-side"><div><div class="ipz-kick">Provador virtual</div><h2><b>' + esc(CFG.titulo) + '</b></h2></div>' +
       '<p class="ipz-sub">Veja o ' + esc(nm) + ' em tamanho real, num pulso do seu tamanho ou numa foto do seu próprio pulso.</p>' +
       '<div class="ipz-fit" data-r="fit"><i></i><div><b></b><small></small></div></div>' +
@@ -739,7 +741,7 @@ function Widget(host, estilo, P) {
       $('h3').textContent = fmt(P.diam, 1) + ' mm' + (S.mode === 'fk' ? ' · pulso de ' + fmt(S.c, 1) + ' cm' : ' · na sua foto');
       var md = $('mdot'); if (md && fit) { var pos = Math.max(0.02, Math.min(0.98, (fit.pct - 50) / 60)); md.style.left = (pos * 100) + '%'; var z = fit.pct < FIT_Z[0] ? 0 : fit.pct <= FIT_Z[1] ? 1 : 2; host.querySelectorAll('.ipz-mlab span').forEach(function (e) { e.classList.toggle('on', +e.dataset.z === z); }); $('mpct').textContent = Math.round(fit.pct) + '%'; }
       var db = host.querySelector('[data-a="dims"]'); if (db) { db.setAttribute('aria-pressed', S.dims ? 'true' : 'false'); db.textContent = S.dims ? 'Ocultar as medidas' : 'Ver as medidas no pulso'; db.hidden = S.mode !== 'fk'; }
-      $('fitp').textContent = fit ? 'Visto de cima, um pulso de ' + fmt(S.c, 1) + ' cm tem cerca de ' + Math.round(fit.w) + ' mm de largura. De uma alça à outra, o ' + nm + ' mede ' + fmt(fit.l2l, 1) + ' mm' + (P.l2l ? '' : ' (estimado)') + ' e ' + fit.s : '';
+      $('fitp').textContent = fitText(fit, S.c);
       var mb = host.querySelector('[data-a="mode"]'); if (mb) mb.querySelector('span').textContent = S.mode === 'fk' ? 'Ver na foto do meu pulso' : 'Voltar ao pulso ilustrado'; if (mb) mb.setAttribute('aria-pressed', S.mode === 'foto' ? 'true' : 'false');
       var nb = host.querySelector('[data-a="night"]'); if (nb) { nb.hidden = !P.lume; nb.setAttribute('aria-pressed', S.night ? 'true' : 'false'); nb.querySelector('span').textContent = S.night ? 'Ver de dia' : (P.led && !P.lume ? 'Acender a luz' : 'Ver no escuro'); }
     } else {
@@ -755,6 +757,15 @@ function Widget(host, estilo, P) {
       var mn = host.querySelector('[data-a="manual"]'); if (mn) { mn.hidden = !F.img; mn.textContent = F.manual ? 'Achar o relógio com 1 toque' : 'Marcar com 2 toques'; }
     }
   }
+  function fitText(fit, c) { return fit ? 'Visto de cima, um pulso de ' + fmt(c, 1) + ' cm tem cerca de ' + Math.round(fit.w) + ' mm de largura. De uma alça à outra, o ' + nm + ' mede ' + fmt(fit.l2l, 1) + ' mm' + (P.l2l ? '' : ' (estimado)') + ' e ' + fit.s : ''; }
+  /* estabilidade: reserva para o texto de caimento a altura da versão mais longa possível, para nada pular ao mexer na régua */
+  function lockText() {
+    var p = $('fitp'); if (!p || !p.offsetWidth) return; var keep = p.textContent, mx = 0, cs = [13.5, 16.5, 19.5, 21.5];
+    p.style.minHeight = '0px';
+    cs.forEach(function (c) { var f = fitOf(P, c); if (!f) return; ['fica no limite do ideal: as alças chegam perto da borda do pulso.', 'fica muito grande: as alças passam da borda do pulso.', 'fica discreto: sobra bastante pulso dos lados.'].forEach(function (t) { f.s = t; p.textContent = fitText(f, c); mx = Math.max(mx, p.offsetHeight); }); });
+    p.textContent = keep; if (mx) p.style.minHeight = mx + 'px';
+  }
+  var lockT; window.addEventListener('resize', function () { clearTimeout(lockT); lockT = setTimeout(lockText, 150); });
   function msg(t, err) { var m = $('msg'); if (!m) return; m.textContent = t || ''; m.classList.toggle('ipz-err', !!err); }
   function cap(t) { var c = $('cap'); c.hidden = !t; c.textContent = t || ''; }
   function save() { lsSet({ g: S.g, t: S.t, c: S.c, refmm: F.refmm }); }
@@ -798,6 +809,7 @@ function Widget(host, estilo, P) {
   }
   function render() {
     if (!C) return;
+    stage.classList.toggle('ipz-sq', S.mode === 'fk' || !!(F.img && F.cal));
     var g = cv.getContext('2d');
     if (S.mode === 'fk') {
       stage.classList.remove('ipz-tap', 'ipz-drag');
@@ -932,7 +944,7 @@ function Widget(host, estilo, P) {
       if (!img) throw new Error('img');
       C = makeCut(img, P);
       if (!C.ok) throw new Error(C.why);
-      $('load').remove(); stage.classList.add('ipz-wait'); render(); drawn = true; requestAnimationFrame(function () { stage.classList.remove('ipz-wait'); }); track('exibido', { sku: P.sku });
+      $('load').remove(); lockText(); stage.classList.add('ipz-wait'); render(); drawn = true; requestAnimationFrame(function () { stage.classList.remove('ipz-wait'); }); track('exibido', { sku: P.sku });
       if (CFG.debug) debugPanel(host, C, P);
     }).catch(function (err) {
       log('falhou', err); host.hidden = true; /* sem simulação confiável: some sem deixar buraco na página */
